@@ -47,3 +47,11 @@ po/*~
 
 # RStudio Connect folder
 rsconnect/
+
+# Project specific plans
+plans/
+misc/
+
+# Local dev files
+.claude/
+claude.md
