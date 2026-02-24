@@ -6,6 +6,8 @@
 \alias{dtptite-package}
 \title{dtptite: Dose Transition Pathways for Time-to-Event Dose-Finding Designs}
 \description{
+\if{html}{\figure{logo.png}{options: style='float: right' alt='logo' width='120'}}
+
 Implements the Dose Transition Pathways (DTP) look-ahead strategy for time-to-event phase I dose-finding clinical trials with delayed or pending toxicity outcomes. Provides a DTP decorator for the 'escalation' framework, supporting both TITE-CRM (model-based) and TITE-BOIN (model-assisted) base designs.
 }
 \seealso{
