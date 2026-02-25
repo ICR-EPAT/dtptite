@@ -396,18 +396,67 @@ test_that("custom get_weight function works in simulate_trials", {
   )
 })
 
-test_that("dfcrm::titecrm accepts pre-computed weights directly", {
-  # This confirms the conduct pathway: compute weights externally, pass to titecrm
-  result <- dfcrm::titecrm(
-    prior  = skeleton,
-    target = target,
+test_that("get_dfcrm_tite with pre-computed weights matches dfcrm::titecrm", {
+  # Verify our entry point faithfully wraps dfcrm with sarcoma trial parameters
+  outcomes <- data.frame(
+    dose   = c(1, 2, 2, 2),
     tox    = c(0, 0, 1, 0),
-    level  = c(1, 2, 2, 2),
-    weights = c(1, 0.5, 1, 0.75),  # pre-computed weights
-    model  = "empiric",
-    method = "bayes"
+    weight = c(1, 0.5, 1, 0.75),
+    cohort = 1:4
   )
 
-  expect_true(is.numeric(result$mtd))
-  expect_equal(result$weights, c(1, 0.5, 1, 0.75))
+  esc_fit <- get_dfcrm_tite(
+    skeleton = skeleton, target = target, scale = sqrt(1.34)
+  ) %>% fit(outcomes)
+
+  dfcrm_fit <- dfcrm::titecrm(
+    prior   = skeleton,
+    target  = target,
+    tox     = c(0, 0, 1, 0),
+    level   = c(1, 2, 2, 2),
+    weights = c(1, 0.5, 1, 0.75),
+    model   = "empiric",
+    method  = "bayes",
+    scale   = sqrt(1.34)
+  )
+
+  expect_equal(recommended_dose(esc_fit), dfcrm_fit$mtd)
+  expect_equal(mean_prob_tox(esc_fit), dfcrm_fit$ptox, tolerance = 1e-6)
+})
+
+# ===== Test Group 7: Credible Intervals ==================================
+
+test_that("TITE-CRM credible intervals match underlying dfcrm fit", {
+  model <- get_dfcrm_tite(skeleton = skeleton, target = target)
+
+  outcomes <- data.frame(
+    dose   = c(1, 1, 2, 2, 2),
+    tox    = c(0, 0, 0, 1, 0),
+    weight = c(1, 1, 0.5, 1, 0.75),
+    cohort = 1:5
+  )
+
+  fit_obj <- model %>% fit(outcomes)
+
+  # Access credible intervals from underlying dfcrm fit (default conf.level = 0.9)
+  dfcrm_lower <- fit_obj$dfcrm_fit$ptoxL
+  dfcrm_upper <- fit_obj$dfcrm_fit$ptoxU
+
+  # escalation's prob_tox_quantile at matching quantiles (5th/95th for 90% CI)
+  lower <- prob_tox_quantile(fit_obj, p = 0.05)
+  upper <- prob_tox_quantile(fit_obj, p = 0.95)
+
+  expect_equal(lower, dfcrm_lower, tolerance = 1e-6)
+  expect_equal(upper, dfcrm_upper, tolerance = 1e-6)
+
+  # Lower < mean < upper for all doses
+  mean_pt <- mean_prob_tox(fit_obj)
+  expect_true(all(lower < mean_pt))
+  expect_true(all(mean_pt < upper))
+
+  # prob_tox_exceeds returns probabilities in [0, 1]
+  exceed <- prob_tox_exceeds(fit_obj, threshold = target)
+  expect_true(is.numeric(exceed))
+  expect_length(exceed, length(skeleton))
+  expect_true(all(exceed >= 0 & exceed <= 1))
 })
