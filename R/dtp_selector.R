@@ -190,3 +190,22 @@ dtp_wait_time.dtp_selector <- function(x, type = c("time", "weight"), ...) {
 dtp_projected_dose.dtp_selector <- function(x, ...) {
   x$projected_dose
 }
+
+# -- Forwarding through outer decorators ----------------------------------
+# escalation's derived_dose_selector only forwards known generics.
+# These methods ensure DTP generics propagate through any outer decorator.
+
+#' @export
+dtp_should_wait.derived_dose_selector <- function(x, ...) {
+  dtp_should_wait(x$parent, ...)
+}
+
+#' @export
+dtp_wait_time.derived_dose_selector <- function(x, type = c("time", "weight"), ...) {
+  dtp_wait_time(x$parent, type = type, ...)
+}
+
+#' @export
+dtp_projected_dose.derived_dose_selector <- function(x, ...) {
+  dtp_projected_dose(x$parent, ...)
+}

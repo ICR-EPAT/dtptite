@@ -213,3 +213,29 @@ test_that("DTP with t_max=Inf terminates via effective bound", {
   expect_gt(wt, 0)
   expect_lte(wt, 1)  # weight gain cannot exceed 1
 })
+
+# ===== Test 9: DTP methods accessible through outer decorator ==============
+
+test_that("DTP methods accessible through outer decorator", {
+  outcomes <- data.frame(
+    dose   = c(2, 2, 2, 2),
+    tox    = c(0, 1, 0, 0),
+    weight = c(1, 1, 1, 0.3),
+    cohort = 1:4
+  )
+
+  # DTP inner, stop_at_n outer — reversed pipe order
+  model <- get_dfcrm_tite(skeleton = skeleton, target = target) %>%
+    apply_dtp(t_max = 56, obswin = 56) %>%
+    stop_at_n(n = 12)
+
+  fit_obj <- model %>% fit(outcomes)
+
+  # DTP methods should still work through outer stop_at_n
+  expect_true(dtp_should_wait(fit_obj))
+  expect_gt(dtp_wait_time(fit_obj), 0)
+  expect_false(is.na(dtp_projected_dose(fit_obj)))
+  # Standard methods also work
+  expect_equal(recommended_dose(fit_obj), 1)
+  expect_true(continue(fit_obj))
+})
