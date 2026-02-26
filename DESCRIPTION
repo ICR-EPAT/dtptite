@@ -16,6 +16,7 @@ Imports:
     escalation (>= 0.2.0),
     stats
 Suggests:
+    dfcrm,
     testthat (>= 3.0.0),
     TITEgBOIN
 Config/testthat/edition: 3

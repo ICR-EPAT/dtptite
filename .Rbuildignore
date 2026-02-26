@@ -5,3 +5,5 @@
 ^codecov\.yml$
 ^claude\.md$
 ^README\.md$
+^misc$
+^plans$
