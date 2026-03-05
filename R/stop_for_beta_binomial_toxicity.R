@@ -32,6 +32,13 @@ stop_for_beta_binomial_toxicity <- function(parent_selector_factory,
                                             confidence = 0.88,
                                             a = NULL,
                                             b = NULL) {
+  if (is.character(dose)) {
+    if (!identical(dose, "recommended") && !identical(dose, "any")) {
+      stop("'dose' must be numeric, \"recommended\", or \"any\"")
+    }
+  } else {
+    stopifnot(is.numeric(dose), length(dose) >= 1, all(dose >= 1))
+  }
   stopifnot(is.numeric(tox_threshold), length(tox_threshold) == 1,
             tox_threshold > 0, tox_threshold < 1)
   stopifnot(is.numeric(confidence), length(confidence) == 1,

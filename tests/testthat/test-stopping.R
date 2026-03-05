@@ -211,6 +211,80 @@ test_that("dose=c(1,2) stops when either monitored dose exceeds", {
   expect_true(continue(fit_d1))
 })
 
+# ===== Test 10b: Invalid string dose errors ===============================
+
+test_that("String dose level like '1' is rejected", {
+  model <- get_dfcrm_tite(skeleton = skeleton, target = target)
+  expect_error(
+    stop_for_beta_binomial_toxicity(
+      model, dose = "1", tox_threshold = target, confidence = 0.88
+    ),
+    "\"recommended\", or \"any\""
+  )
+})
+
+# ===== Test 10c: dose="recommended" when parent recommends NA =============
+
+test_that("dose='recommended' returns continue=TRUE when parent recommends NA", {
+  # Use stop_when_too_toxic on the parent to force recommended_dose -> NA
+  outcomes <- data.frame(
+    dose   = c(1, 1, 1),
+    tox    = c(1, 1, 1),
+    weight = c(1, 1, 1),
+    cohort = 1:3
+  )
+
+  model <- get_dfcrm_tite(skeleton = skeleton, target = target) %>%
+    stop_when_too_toxic(dose = "any", tox_threshold = target, confidence = 0.5) %>%
+    stop_for_beta_binomial_toxicity(
+      dose = "recommended", tox_threshold = target, confidence = 0.88
+    )
+  fit_obj <- model %>% fit(outcomes)
+
+  # Parent recommends NA (stop_when_too_toxic fired)
+  expect_true(is.na(recommended_dose(fit_obj$parent)))
+  # Beta-Binomial should not trigger stop (can't evaluate NA dose)
+  # but parent already stopped, so continue is FALSE
+  expect_false(continue(fit_obj))
+})
+
+# ===== Test 10d: parent stops first =======================================
+
+test_that("continue=FALSE when parent stops but beta-binom would not", {
+  outcomes <- data.frame(
+    dose   = c(1, 1, 1),
+    tox    = c(0, 0, 0),
+    weight = c(1, 1, 1),
+    cohort = 1:3
+  )
+
+  # Parent stop_at_n(3) fires; beta-binom has 0 DLTs so would not stop
+  model <- get_dfcrm_tite(skeleton = skeleton, target = target) %>%
+    stop_at_n(n = 3) %>%
+    stop_for_beta_binomial_toxicity(
+      dose = 1, tox_threshold = target, confidence = 0.88
+    )
+  fit_obj <- model %>% fit(outcomes)
+
+  expect_false(continue(fit_obj))
+})
+
+# ===== Test 10e: recommended_dose delegates when not stopping =============
+
+test_that("recommended_dose delegates to parent when not stopping", {
+  outcomes <- data.frame(
+    dose   = c(1, 1, 1),
+    tox    = c(0, 0, 0),
+    weight = c(1, 1, 1),
+    cohort = 1:3
+  )
+  fit_obj <- fit_with_stop(outcomes)
+
+  # No DLTs -> no stop -> recommended_dose should match parent
+  expect_equal(recommended_dose(fit_obj), recommended_dose(fit_obj$parent))
+  expect_false(is.na(recommended_dose(fit_obj)))
+})
+
 # ===== Test 11: Chains with DTP ==========================================
 
 test_that("Stopping rule chains with DTP decorator", {
