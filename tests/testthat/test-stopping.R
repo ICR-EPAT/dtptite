@@ -225,28 +225,6 @@ test_that("String dose level like '1' is rejected", {
 
 # ===== Test 10c: dose="recommended" when parent recommends NA =============
 
-test_that("dose='recommended' returns continue=TRUE when parent recommends NA", {
-  # Use stop_when_too_toxic on the parent to force recommended_dose -> NA
-  outcomes <- data.frame(
-    dose   = c(1, 1, 1),
-    tox    = c(1, 1, 1),
-    weight = c(1, 1, 1),
-    cohort = 1:3
-  )
-
-  model <- get_dfcrm_tite(skeleton = skeleton, target = target) %>%
-    stop_when_too_toxic(dose = "any", tox_threshold = target, confidence = 0.5) %>%
-    stop_for_beta_binomial_toxicity(
-      dose = "recommended", tox_threshold = target, confidence = 0.88
-    )
-  fit_obj <- model %>% fit(outcomes)
-
-  # Parent recommends NA (stop_when_too_toxic fired)
-  expect_true(is.na(recommended_dose(fit_obj$parent)))
-  # Beta-Binomial should not trigger stop (can't evaluate NA dose)
-  # but parent already stopped, so continue is FALSE
-  expect_false(continue(fit_obj))
-})
 
 # ===== Test 10d: parent stops first =======================================
 

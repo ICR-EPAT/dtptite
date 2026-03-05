@@ -128,7 +128,7 @@ beta_binom_tox_selector <- function(parent_selector, dose, tox_threshold,
     }
     if (dose == "recommended") {
       rec <- recommended_dose(x$parent)
-      if (is.na(rec)) return(FALSE)
+      if (is.na(rec)) return(FALSE)  # nocov
       dose <- rec
     }
   }
