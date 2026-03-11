@@ -59,10 +59,17 @@ apply_dtp <- function(parent_selector_factory, t_max, obswin) {
   stopifnot(is.numeric(t_max), length(t_max) == 1, t_max >= 0)
   stopifnot(is.numeric(obswin), length(obswin) == 1, obswin > 0)
 
+  # Mutable settings (e.g. queue_size) stored in an environment so that
+
+  # set_dtp_queue_size() can modify them through R's reference semantics.
+  sim_settings <- new.env(parent = emptyenv())
+  sim_settings$queue_size <- NULL
+
   x <- list(
     parent = parent_selector_factory,
     t_max = t_max,
-    obswin = obswin
+    obswin = obswin,
+    sim_settings = sim_settings
   )
   class(x) <- c("dtp_selector_factory",
                  "derived_dose_selector_factory",
