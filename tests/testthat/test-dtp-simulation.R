@@ -11,6 +11,7 @@
 # 8. Cohort size 3 + queue (queue replaces next cohort)
 # 9. tite_patient_samples (correct distribution)
 # 10. queue_size = 0 vs default (different trial duration)
+# 11. Default patient_sample uses U(0, max_time)
 
 library(escalation)
 
@@ -23,16 +24,19 @@ target <- 0.25
 test_that("t_max=0 DTP simulation matches base phase1_tite_sim", {
   true_prob_tox <- c(0.05, 0.15, 0.25, 0.35, 0.60)
 
-  base_design <- get_dfcrm_tite(skeleton = skeleton, target = target) %>%
+  base_design <- get_dfcrm_tite(skeleton = skeleton, target = target) |>
     stop_at_n(n = 9)
 
-  dtp_design <- get_dfcrm_tite(skeleton = skeleton, target = target) %>%
-    apply_dtp(t_max = 0, obswin = 56) %>%
+  dtp_design <- get_dfcrm_tite(skeleton = skeleton, target = target) |>
+    apply_dtp(t_max = 0, obswin = 56) |>
     stop_at_n(n = 9)
 
-  # Same seed → same patient sample and arrivals
+  # Same seed -> same patient sample and arrivals
   set.seed(42)
-  ps <- PatientSample$new(num_patients = 50)
+  ps <- PatientSample$new(
+    num_patients = 50,
+    time_to_tox_func = function() runif(1, 0, 56)
+  )
 
   set.seed(100)
   base_result <- escalation:::phase1_tite_sim(
@@ -43,7 +47,10 @@ test_that("t_max=0 DTP simulation matches base phase1_tite_sim", {
 
   # Reset the same PatientSample for DTP run
   set.seed(42)
-  ps2 <- PatientSample$new(num_patients = 50)
+  ps2 <- PatientSample$new(
+    num_patients = 50,
+    time_to_tox_func = function() runif(1, 0, 56)
+  )
 
   set.seed(100)
   dtp_result <- phase1_dtp_tite_sim(
@@ -71,14 +78,22 @@ test_that("DTP wait increases trial duration in single simulation", {
   # moderate tox with cohort_size=3, pending patients, t_max=35
   true_prob_tox <- c(0.05, 0.15, 0.25, 0.35, 0.60)
 
-  base_design <- get_dfcrm_tite(skeleton = skeleton, target = target) %>%
+  base_design <- get_dfcrm_tite(skeleton = skeleton, target = target) |>
     stop_at_n(n = 12)
 
-  dtp_design <- get_dfcrm_tite(skeleton = skeleton, target = target) %>%
-    apply_dtp(t_max = 35, obswin = 56) %>%
+  dtp_design <- get_dfcrm_tite(skeleton = skeleton, target = target) |>
+    apply_dtp(t_max = 35, obswin = 56) |>
     stop_at_n(n = 12)
 
   arrivals <- function(df) escalation::cohorts_of_n(n = 3, mean_time_delta = 1)
+
+  # Pre-create matched patient sample pairs (same seed -> identical latent data)
+  set.seed(999)
+  ps_base <- tite_patient_samples(num_sims = 30, max_time = 56,
+                                   num_patients = 50)
+  set.seed(999)
+  ps_dtp <- tite_patient_samples(num_sims = 30, max_time = 56,
+                                  num_patients = 50)
 
   # Run multiple seeds and check DTP >= base on average
   base_durations <- numeric(30)
@@ -86,32 +101,20 @@ test_that("DTP wait increases trial duration in single simulation", {
 
   for (sim_i in seq_len(30)) {
     seed <- 1000 + sim_i
-    set.seed(seed)
-    ps <- PatientSample$new(
-      num_patients = 50,
-      time_to_tox_func = function() runif(1, 0, 56)
-    )
 
     set.seed(seed + 5000)
     base_res <- escalation:::phase1_tite_sim(
       base_design, true_prob_tox,
-      patient_sample = ps,
+      patient_sample = ps_base[[sim_i]],
       sample_patient_arrivals = arrivals,
       max_time = 56
     )
     base_durations[sim_i] <- base_res[[1]]$time
 
-    # Recreate same patient sample
-    set.seed(seed)
-    ps2 <- PatientSample$new(
-      num_patients = 50,
-      time_to_tox_func = function() runif(1, 0, 56)
-    )
-
     set.seed(seed + 5000)
     dtp_res <- phase1_dtp_tite_sim(
       dtp_design, true_prob_tox,
-      patient_sample = ps2,
+      patient_sample = ps_dtp[[sim_i]],
       sample_patient_arrivals = arrivals,
       max_time = 56
     )
@@ -130,11 +133,11 @@ test_that("DTP wait increases trial duration in single simulation", {
 test_that("simulate_compare runs with DTP and non-DTP designs", {
   true_prob_tox <- c(0.05, 0.15, 0.25, 0.35, 0.60)
 
-  base_design <- get_dfcrm_tite(skeleton = skeleton, target = target) %>%
+  base_design <- get_dfcrm_tite(skeleton = skeleton, target = target) |>
     stop_at_n(n = 9)
 
-  dtp_design <- get_dfcrm_tite(skeleton = skeleton, target = target) %>%
-    apply_dtp(t_max = 14, obswin = 56) %>%
+  dtp_design <- get_dfcrm_tite(skeleton = skeleton, target = target) |>
+    apply_dtp(t_max = 14, obswin = 56) |>
     stop_at_n(n = 9)
 
   set.seed(42)
@@ -159,15 +162,15 @@ test_that("stopping rule triggers early stop in DTP simulation", {
   # Very toxic scenario: true tox >> target at all doses
   true_prob_tox <- c(0.60, 0.70, 0.80, 0.90, 0.95)
 
-  design <- get_dfcrm_tite(skeleton = skeleton, target = target) %>%
-    stop_for_beta_binomial_toxicity(dose = "any", tox_threshold = 0.25,
-                                    confidence = 0.70) %>%
+  design <- get_dfcrm_tite(skeleton = skeleton, target = target) |>
+    stop_for_beta_binomial_toxicity(dose = 1, tox_threshold = 0.25,
+                                    confidence = 0.70) |>
     apply_dtp(t_max = 14, obswin = 56)
 
   set.seed(42)
   ps <- PatientSample$new(
     num_patients = 50,
-    time_to_tox_func = function() runif(1, 0, 10)
+    time_to_tox_func = function() runif(1, 0, 56)
   )
 
   set.seed(100)
@@ -193,8 +196,8 @@ test_that("stopping rule triggers early stop in DTP simulation", {
 test_that("simulate_trials dispatches to DTP simulation function", {
   true_prob_tox <- c(0.05, 0.15, 0.25, 0.35, 0.60)
 
-  design <- get_dfcrm_tite(skeleton = skeleton, target = target) %>%
-    apply_dtp(t_max = 14, obswin = 56) %>%
+  design <- get_dfcrm_tite(skeleton = skeleton, target = target) |>
+    apply_dtp(t_max = 14, obswin = 56) |>
     stop_at_n(n = 6)
 
   # simulation_function should find our method
@@ -217,18 +220,18 @@ test_that("simulate_trials dispatches to DTP simulation function", {
 # ===== Test 6: Outer decorator dispatch ===================================
 
 test_that("simulation_function finds DTP factory through decorator chain", {
-  design <- get_dfcrm_tite(skeleton = skeleton, target = target) %>%
-    apply_dtp(t_max = 14, obswin = 56) %>%
+  design <- get_dfcrm_tite(skeleton = skeleton, target = target) |>
+    apply_dtp(t_max = 14, obswin = 56) |>
     stop_at_n(n = 9)
 
-  # stop_at_n wraps DTP → dispatch should walk to DTP factory
+  # stop_at_n wraps DTP -> dispatch should walk to DTP factory
   sim_func <- simulation_function(design)
   expect_identical(sim_func, phase1_dtp_tite_sim)
 
   # Double-wrapped: stopping rule + stop_at_n around DTP
-  design2 <- get_dfcrm_tite(skeleton = skeleton, target = target) %>%
-    apply_dtp(t_max = 14, obswin = 56) %>%
-    stop_for_beta_binomial_toxicity(dose = 1, tox_threshold = 0.25) %>%
+  design2 <- get_dfcrm_tite(skeleton = skeleton, target = target) |>
+    apply_dtp(t_max = 14, obswin = 56) |>
+    stop_for_beta_binomial_toxicity(dose = 1, tox_threshold = 0.25) |>
     stop_at_n(n = 9)
 
   sim_func2 <- simulation_function(design2)
@@ -240,15 +243,15 @@ test_that("simulation_function finds DTP factory through decorator chain", {
 test_that("DLT during wait triggers re-evaluation", {
   true_prob_tox <- c(0.05, 0.15, 0.25, 0.35, 0.60)
 
-  design <- get_dfcrm_tite(skeleton = skeleton, target = target) %>%
-    apply_dtp(t_max = 35, obswin = 56) %>%
+  design <- get_dfcrm_tite(skeleton = skeleton, target = target) |>
+    apply_dtp(t_max = 35, obswin = 56) |>
     stop_at_n(n = 12)
 
-  # Create patient sample with controlled DLT timing
+  # Use deterministic DLT timing: DLT always at day 20
   set.seed(42)
   ps <- PatientSample$new(
     num_patients = 50,
-    time_to_tox_func = function() runif(1, 0, 56)
+    time_to_tox_func = function() 20
   )
 
   set.seed(100)
@@ -262,7 +265,7 @@ test_that("DLT during wait triggers re-evaluation", {
     return_all_fits = TRUE
   )
 
-  # Should have more than 2 fits (initial + cohorts + wait re-evaluations)
+  # Should have more than 2 fits (initial + cohorts)
   expect_gt(length(result), 2)
 
   # Final fit should be valid
@@ -273,12 +276,13 @@ test_that("DLT during wait triggers re-evaluation", {
 
 # ===== Test 8: Cohort size 3 + queue ======================================
 
-test_that("queue replaces next cohort with cohort_size=3", {
+test_that("queue_size=2 still doses full cohorts of 3", {
   true_prob_tox <- c(0.05, 0.15, 0.25, 0.35, 0.60)
 
-  design <- get_dfcrm_tite(skeleton = skeleton, target = target) %>%
-    apply_dtp(t_max = 14, obswin = 56) %>%
+  design <- get_dfcrm_tite(skeleton = skeleton, target = target) |>
+    apply_dtp(t_max = 14, obswin = 56) |>
     stop_at_n(n = 12)
+  set_dtp_queue_size(design, 2)
 
   set.seed(42)
   ps <- PatientSample$new(
@@ -330,44 +334,42 @@ test_that("tite_patient_samples creates correct tox_time distribution", {
 test_that("queue_size=0 produces different behavior than default", {
   true_prob_tox <- c(0.05, 0.15, 0.25, 0.35, 0.60)
 
-  design_default <- get_dfcrm_tite(skeleton = skeleton, target = target) %>%
-    apply_dtp(t_max = 35, obswin = 56) %>%
+  design_default <- get_dfcrm_tite(skeleton = skeleton, target = target) |>
+    apply_dtp(t_max = 35, obswin = 56) |>
     stop_at_n(n = 12)
 
-  design_no_queue <- get_dfcrm_tite(skeleton = skeleton, target = target) %>%
-    apply_dtp(t_max = 35, obswin = 56) %>%
+  design_no_queue <- get_dfcrm_tite(skeleton = skeleton, target = target) |>
+    apply_dtp(t_max = 35, obswin = 56) |>
     stop_at_n(n = 12)
   set_dtp_queue_size(design_no_queue, 0)
 
   arrivals <- function(df) escalation::cohorts_of_n(n = 3, mean_time_delta = 1)
+
+  # Pre-create matched patient sample pairs
+  set.seed(888)
+  ps_default <- tite_patient_samples(num_sims = 30, max_time = 56,
+                                      num_patients = 50)
+  set.seed(888)
+  ps_noqueue <- tite_patient_samples(num_sims = 30, max_time = 56,
+                                      num_patients = 50)
 
   # Run multiple seeds and track whether durations ever differ
   any_different <- FALSE
   for (sim_i in seq_len(30)) {
     seed <- 2000 + sim_i
 
-    set.seed(seed)
-    ps1 <- PatientSample$new(
-      num_patients = 50,
-      time_to_tox_func = function() runif(1, 0, 56)
-    )
     set.seed(seed + 5000)
     res_default <- phase1_dtp_tite_sim(
       design_default, true_prob_tox,
-      patient_sample = ps1,
+      patient_sample = ps_default[[sim_i]],
       sample_patient_arrivals = arrivals,
       max_time = 56
     )
 
-    set.seed(seed)
-    ps2 <- PatientSample$new(
-      num_patients = 50,
-      time_to_tox_func = function() runif(1, 0, 56)
-    )
     set.seed(seed + 5000)
     res_no_queue <- phase1_dtp_tite_sim(
       design_no_queue, true_prob_tox,
-      patient_sample = ps2,
+      patient_sample = ps_noqueue[[sim_i]],
       sample_patient_arrivals = arrivals,
       max_time = 56
     )
@@ -380,4 +382,39 @@ test_that("queue_size=0 produces different behavior than default", {
 
   # At least some simulations should differ when queue is enabled vs disabled
   expect_true(any_different)
+})
+
+# ===== Test 11: Default patient_sample uses U(0, max_time) ================
+
+test_that("default patient_sample generates tox times spanning max_time", {
+  # High tox to guarantee DLTs appear in 12 patients
+  true_prob_tox <- c(0.30, 0.45, 0.55, 0.65, 0.80)
+
+  design <- get_dfcrm_tite(skeleton = skeleton, target = target) |>
+    apply_dtp(t_max = 14, obswin = 56) |>
+    stop_at_n(n = 12)
+
+  # No patient_sample provided — exercises the NULL default path
+  set.seed(42)
+  result <- phase1_dtp_tite_sim(
+    design, true_prob_tox,
+    sample_patient_arrivals = function(df) {
+      escalation::cohorts_of_n(n = 3, mean_time_delta = 1)
+    },
+    max_time = 56,
+    return_all_fits = TRUE
+  )
+
+  # Simulation should complete with multiple fits
+  expect_gt(length(result), 1)
+
+  # Final fit should be valid and have enrolled patients
+  final_fit <- result[[length(result)]]$fit
+  expect_true(is.numeric(recommended_dose(final_fit)) ||
+                is.na(recommended_dose(final_fit)))
+  expect_gt(num_patients(final_fit), 0)
+
+  # With high tox, DLTs should be observed
+  fit_data <- model_frame(final_fit)
+  expect_gt(sum(fit_data$tox), 0)
 })

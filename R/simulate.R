@@ -254,7 +254,7 @@ set_dtp_queue_size <- function(dtp_selector_factory, queue_size) {
 # -- Internal: main simulation function ------------------------------------
 
 phase1_dtp_tite_sim <- function(selector_factory, true_prob_tox,
-                                patient_sample = escalation::PatientSample$new(),
+                                patient_sample = NULL,
                                 sample_patient_arrivals = function(df) {
                                   escalation::cohorts_of_n(n = 1,
                                                            mean_time_delta = 1)
@@ -270,6 +270,12 @@ phase1_dtp_tite_sim <- function(selector_factory, true_prob_tox,
 
   if (length(max_time) > 1 | max_time <= 0) {
     stop("max_time should be a strictly positive scalar.")
+  }
+
+  if (is.null(patient_sample)) {
+    patient_sample <- escalation::PatientSample$new(
+      time_to_tox_func = function() stats::runif(1, 0, max_time)
+    )
   }
 
   # -- Parse previous outcomes (matches phase1_tite_sim) -------------------
@@ -454,9 +460,6 @@ phase1_dtp_tite_sim <- function(selector_factory, true_prob_tox,
       fit_obj <- wait_result$fit
       next_dose <- wait_result$next_dose
       all_data <- wait_result$all_data
-
-      i <- i + 1
-      fits[[i]] <- list(.depth = i, time = time_now, fit = fit_obj)
     }
   }
 
