@@ -4,8 +4,11 @@
 #' @importFrom escalation dose_admissible supports_sampling
 #' @importFrom escalation n_at_dose tox_at_dose
 #' @importFrom escalation simulation_function
-#' @importFrom BOIN get.boundary
+#' @importFrom BOIN get.boundary select.mtd
+#' @importFrom escalation tox cohort prob_tox_quantile median_prob_tox
+#' @importFrom escalation prob_tox_exceeds empiric_tox_rate
+#' @importFrom escalation parse_phase1_outcomes
 #' @importFrom dplyr bind_rows
-#' @importFrom stats pbeta runif
+#' @importFrom stats pbeta qbeta runif
 "_PACKAGE"
 

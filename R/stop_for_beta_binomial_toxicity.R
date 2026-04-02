@@ -154,7 +154,16 @@ continue.beta_binom_tox_selector <- function(x, ...) {
 #' @export
 recommended_dose.beta_binom_tox_selector <- function(x, ...) {
   if (.bb_should_stop(x)) return(NA)
-  recommended_dose(x$parent, ...)
+  rec <- recommended_dose(x$parent, ...)
+  if (is.na(rec)) return(NA)
+
+  admissible <- dose_admissible(x)
+  if (admissible[rec]) return(rec)
+
+  # Clamp to highest admissible dose at or below the recommendation
+  candidates <- which(admissible[seq_len(rec)])
+  if (length(candidates) == 0L) return(NA_integer_)
+  as.integer(max(candidates))
 }
 
 #' @export
