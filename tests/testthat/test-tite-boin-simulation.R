@@ -19,6 +19,7 @@
 # 13. Elimination + DTP in simulation
 # 14. Elimination without DTP in simulation
 # 15. Cross-design comparison (all 4 designs)
+# 16. Operating characteristics match TITEgBOIN reference
 
 library(escalation)
 
@@ -550,5 +551,105 @@ test_that("simulate_compare works with all 4 designs", {
       info = paste("prob_recommend not numeric for", name))
     expect_true(is.numeric(trial_duration(result[[name]])),
       info = paste("trial_duration not numeric for", name))
+  }
+})
+
+# ===== Test 16: Operating characteristics match TITEgBOIN ==================
+
+test_that("TITE-BOIN selection probabilities match TITEgBOIN reference", {
+  skip_if_not_installed("TITEgBOIN")
+
+  # -- Shared parameters -----------------------------------------------------
+  true_prob_tox <- c(0.02, 0.08, 0.12, 0.25, 0.38)
+  tgt <- 0.25
+  num_doses <- 5
+  n_patients <- 24
+  obswin <- 56
+  accrual_interval <- 14  # 1 patient every 14 days
+  p.saf <- 0.6 * tgt
+  p.tox <- 1.4 * tgt
+  cutoff.eli <- 0.88
+  n_sims <- 1000
+
+  # -- TITEgBOIN reference ---------------------------------------------------
+  # accrual = patients per observation window = obswin / accrual_interval
+  tg_result <- TITEgBOIN::get_oc_TITE_QuasiBOIN(
+    target     = tgt,
+    prob       = true_prob_tox,
+    score      = NA,
+    TITE       = TRUE,
+    ncohort    = n_patients,
+    cohortsize = 1,
+    maxt       = obswin,
+    accrual    = obswin / accrual_interval,
+    maxpen     = 0.5,
+    alpha1     = 0.5,     # uniform DLT timing within window
+    alpha2     = 0.5,
+    n.earlystop = 100,
+    Neli       = 3,
+    startdose  = 1,
+    p.saf      = p.saf,
+    p.tox      = p.tox,
+    cutoff.eli = cutoff.eli,
+    ntrial     = n_sims,
+    seed       = 42
+  )
+
+  # Extract selection percentages (list element $selpercent, in %)
+  tg_sel_prop <- tg_result$selpercent / 100
+
+  # -- dtptite simulation ----------------------------------------------------
+  design <- get_boin_tite(num_doses, tgt, p.saf = p.saf, p.tox = p.tox) |>
+    stop_for_beta_binomial_toxicity(
+      dose = 1, tox_threshold = tgt,
+      confidence = cutoff.eli, a = 1, b = 1
+    ) |>
+    dont_skip_doses() |>
+    stop_at_n(n = n_patients) |>
+    select_boin_mtd()
+
+  # Explicitly create patient samples with U(0, obswin) DLT timing.
+  # Use simulate_compare (not simulate_trials) because it correctly
+  # iterates patient_samples[[i]] per sim replicate.
+  set.seed(42)
+  ps_list <- tite_patient_samples(
+    num_sims = n_sims, max_time = obswin, num_patients = 100
+  )
+
+  set.seed(42)
+  result <- simulate_compare(
+    list("boin" = design),
+    num_sims = n_sims,
+    true_prob_tox = true_prob_tox,
+    max_time = obswin,
+    sample_patient_arrivals = function(df) data.frame(time_delta = accrual_interval),
+    patient_samples = ps_list
+  )
+
+  our_pr <- prob_recommend(result$boin)
+  our_no_dose <- our_pr["NoDose"]
+  our_sel <- as.numeric(our_pr[as.character(1:num_doses)])
+
+  # -- Comparison -------------------------------------------------------------
+  # Dose with highest selection % must match
+  tg_best <- which.max(tg_sel_prop)
+  our_best <- which.max(our_sel)
+  expect_equal(our_best, tg_best,
+    info = sprintf(
+      "Best dose mismatch: dtptite=%d (%.1f%%), TITEgBOIN=%d (%.1f%%)",
+      our_best, our_sel[our_best] * 100,
+      tg_best, tg_sel_prop[tg_best] * 100
+    )
+  )
+
+  # All selection probabilities within 10% absolute difference
+  abs_diff <- abs(our_sel - tg_sel_prop)
+  for (d in seq_len(num_doses)) {
+    expect_lt(abs_diff[d], 0.10,
+      label = sprintf(
+        "Dose %d diff (dtptite=%.1f%%, TITEgBOIN=%.1f%%, diff=%.1f%%)",
+        d, our_sel[d] * 100, tg_sel_prop[d] * 100, abs_diff[d] * 100
+      )
+    )
   }
 })
