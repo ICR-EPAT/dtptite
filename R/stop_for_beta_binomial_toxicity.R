@@ -177,5 +177,13 @@ dose_admissible.beta_binom_tox_selector <- function(x, ...) {
   exceedance <- .bb_exceedance_probs(x)
   parent_admissible <- dose_admissible(x$parent, ...)
   inadmissible <- !is.na(exceedance) & exceedance >= x$confidence
+
+  # Cascade: if dose d is eliminated, all doses above d are also eliminated
+  # (matches BOIN/TITEgBOIN elimination rule)
+  first_elim <- which(inadmissible)[1]
+  if (!is.na(first_elim) && first_elim < length(inadmissible)) {
+    inadmissible[first_elim:length(inadmissible)] <- TRUE
+  }
+
   parent_admissible & !inadmissible
 }

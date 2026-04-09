@@ -330,19 +330,36 @@ test_that("Stopping rule chains with stop_at_n", {
 
 # ===== Test 13: dose_admissible marks toxic doses =========================
 
-test_that("dose_admissible marks toxic doses as inadmissible", {
-  outcomes <- data.frame(
+test_that("dose_admissible cascades elimination to higher doses", {
+  # Dose 1 eliminated -> all doses above also eliminated (BOIN rule)
+  outcomes_d1 <- data.frame(
     dose   = c(1, 1, 1, 2, 2, 2),
     tox    = c(1, 1, 1, 0, 0, 0),
     weight = c(1, 1, 1, 1, 1, 1),
     cohort = 1:6
   )
 
-  fit_obj <- fit_with_stop(outcomes, dose = "any")
+  fit_obj <- fit_with_stop(outcomes_d1, dose = "any")
   admissible <- dose_admissible(fit_obj)
 
-  # Dose 1 should be inadmissible (3/3 DLTs)
   expect_false(admissible[1])
-  # Dose 2 should be admissible (0/3 DLTs)
-  expect_true(admissible[2])
+  # Cascade: dose 2+ also eliminated even though 0/3 DLTs
+  expect_false(admissible[2])
+
+  # Dose 3 eliminated -> doses 4-5 also eliminated, doses 1-2 safe
+  outcomes_d3 <- data.frame(
+    dose   = c(1,1,1, 2,2,2, 3,3,3),
+    tox    = c(0,0,0, 0,0,0, 1,1,1),
+    weight = rep(1, 9),
+    cohort = 1:9
+  )
+
+  fit_d3 <- fit_with_stop(outcomes_d3, dose = "any")
+  admissible_d3 <- dose_admissible(fit_d3)
+
+  expect_true(admissible_d3[1])
+  expect_true(admissible_d3[2])
+  expect_false(admissible_d3[3])
+  expect_false(admissible_d3[4])  # cascade
+  expect_false(admissible_d3[5])  # cascade
 })

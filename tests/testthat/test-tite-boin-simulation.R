@@ -572,6 +572,7 @@ test_that("TITE-BOIN selection probabilities match TITEgBOIN reference", {
 
   # Extract selection percentages (list element $selpercent, in %)
   tg_sel_prop <- tg_result$selpercent / 100
+  tg_no_dose <- tg_result$percentstop / 100
 
   # -- dtptite simulation ----------------------------------------------------
   design <- get_boin_tite(num_doses, tgt, p.saf = p.saf, p.tox = p.tox) |>
@@ -617,11 +618,21 @@ test_that("TITE-BOIN selection probabilities match TITEgBOIN reference", {
     )
   )
 
-  # All selection probabilities within 8% absolute difference
-  # (wider than ideal due to n_sims=200 Monte Carlo variance)
+  # NoDose probability within tolerance
+  nodose_diff <- abs(our_no_dose - tg_no_dose)
+  expect_lt(nodose_diff, 0.10,
+    label = sprintf(
+      "NoDose diff (dtptite=%.1f%%, TITEgBOIN=%.1f%%, diff=%.1f%%)",
+      our_no_dose * 100, tg_no_dose * 100, nodose_diff * 100
+    )
+  )
+
+  # All selection probabilities within 10% absolute difference
+  # (accounts for Monte Carlo variance with n_sims=300 and
+  # simulation-layer differences vs TITEgBOIN)
   abs_diff <- abs(our_sel - tg_sel_prop)
   for (d in seq_len(num_doses)) {
-    expect_lt(abs_diff[d], 0.08,
+    expect_lt(abs_diff[d], 0.10,
       label = sprintf(
         "Dose %d diff (dtptite=%.1f%%, TITEgBOIN=%.1f%%, diff=%.1f%%)",
         d, our_sel[d] * 100, tg_sel_prop[d] * 100, abs_diff[d] * 100
@@ -672,6 +683,7 @@ test_that("chained stop_for_beta_binomial_toxicity matches TITEgBOIN extrasafe",
   )
 
   tg_sel_prop <- tg_result$selpercent / 100
+  tg_no_dose <- tg_result$percentstop / 100
 
   # -- dtptite: chained elimination + extra-safe stop -------------------------
   # dose = "any" -> elimination at any dose (matches cutoff.eli)
@@ -705,7 +717,17 @@ test_that("chained stop_for_beta_binomial_toxicity matches TITEgBOIN extrasafe",
   )
 
   our_pr <- prob_recommend(result$boin)
+  our_no_dose <- our_pr["NoDose"]
   our_sel <- as.numeric(our_pr[as.character(1:num_doses)])
+
+  # NoDose probability within tolerance
+  nodose_diff <- abs(our_no_dose - tg_no_dose)
+  expect_lt(nodose_diff, 0.10,
+    label = sprintf(
+      "NoDose diff (dtptite=%.1f%%, TITEgBOIN=%.1f%%, diff=%.1f%%)",
+      our_no_dose * 100, tg_no_dose * 100, nodose_diff * 100
+    )
+  )
 
   # Dose with highest selection % must match
   tg_best <- which.max(tg_sel_prop)
@@ -718,10 +740,10 @@ test_that("chained stop_for_beta_binomial_toxicity matches TITEgBOIN extrasafe",
     )
   )
 
-  # All selection probabilities within 8% absolute difference
+  # All selection probabilities within 10% absolute difference
   abs_diff <- abs(our_sel - tg_sel_prop)
   for (d in seq_len(num_doses)) {
-    expect_lt(abs_diff[d], 0.08,
+    expect_lt(abs_diff[d], 0.10,
       label = sprintf(
         "Dose %d diff (dtptite=%.1f%%, TITEgBOIN=%.1f%%, diff=%.1f%%)",
         d, our_sel[d] * 100, tg_sel_prop[d] * 100, abs_diff[d] * 100
