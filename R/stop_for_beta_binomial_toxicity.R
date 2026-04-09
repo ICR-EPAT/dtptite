@@ -124,7 +124,13 @@ beta_binom_tox_selector <- function(parent_selector, dose, tox_threshold,
 
   if (is.character(dose)) {
     if (dose == "any") {
-      return(any(!is.na(exceedance) & exceedance >= x$confidence))
+      # Elimination mode: individual doses are marked inadmissible via
+      # dose_admissible(); the trial stops only when no admissible dose
+      # can be recommended (i.e. all reachable doses are eliminated).
+      admissible <- dose_admissible(x)
+      rec <- recommended_dose(x$parent)
+      if (is.na(rec)) return(TRUE)
+      return(!any(admissible[seq_len(rec)]))
     }
     if (dose == "recommended") {
       rec <- recommended_dose(x$parent)

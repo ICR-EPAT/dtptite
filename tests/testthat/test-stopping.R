@@ -179,7 +179,7 @@ test_that("dose='recommended' checks the recommended dose", {
 
 # ===== Test 9: dose = "any" ==============================================
 
-test_that("dose='any' stops when any dose exceeds threshold", {
+test_that("dose='any' eliminates doses but continues if admissible doses remain", {
   outcomes <- data.frame(
     dose   = c(1, 1, 1, 3, 3, 3),
     tox    = c(0, 0, 0, 1, 1, 1),
@@ -188,8 +188,25 @@ test_that("dose='any' stops when any dose exceeds threshold", {
   )
 
   fit_obj <- fit_with_stop(outcomes, dose = "any")
-  # Dose 3 has 3/3 DLTs -> exceedance > 0.88 -> stop
+  # Dose 3 eliminated (3/3 DLTs) but dose 1 is safe -> trial continues
+  expect_true(continue(fit_obj))
+  expect_false(dose_admissible(fit_obj)[3])
+  # Recommended dose clamps below eliminated dose
+  expect_lte(recommended_dose(fit_obj), 2)
+})
+
+test_that("dose='any' stops when all reachable doses are eliminated", {
+  outcomes <- data.frame(
+    dose   = c(1, 1, 1),
+    tox    = c(1, 1, 1),
+    weight = c(1, 1, 1),
+    cohort = 1:3
+  )
+
+  fit_obj <- fit_with_stop(outcomes, dose = "any")
+  # Dose 1 eliminated (3/3 DLTs), no lower dose -> trial stops
   expect_false(continue(fit_obj))
+  expect_true(is.na(recommended_dose(fit_obj)))
 })
 
 # ===== Test 10: dose = vector ============================================
