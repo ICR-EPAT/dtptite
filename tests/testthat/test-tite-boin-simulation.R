@@ -21,6 +21,7 @@
 # 15. Cross-design comparison (all 4 designs)
 # 16. Operating characteristics match TITEgBOIN reference
 # 17. Extra-safe stopping via chained decorators vs TITEgBOIN extrasafe
+# 18. All-toxic extrasafe — early stopping dominates
 
 library(escalation)
 
@@ -687,7 +688,8 @@ test_that("chained stop_for_beta_binomial_toxicity matches TITEgBOIN extrasafe",
 
   # -- dtptite: chained elimination + extra-safe stop -------------------------
   # dose = "any" -> elimination at any dose (matches cutoff.eli)
-  # dose = 1     -> trial stops entirely when dose 1 is too toxic (extra-safe)
+  # dose = 1     -> extrasafe: TITEgBOIN uses cutoff.eli - offset (0.05) for
+  #                 dose 1 to make early stopping more aggressive
   design <- get_boin_tite(num_doses, tgt, p.saf = p.saf, p.tox = p.tox) |>
     stop_for_beta_binomial_toxicity(
       dose = "any", tox_threshold = tgt,
@@ -695,7 +697,7 @@ test_that("chained stop_for_beta_binomial_toxicity matches TITEgBOIN extrasafe",
     ) |>
     stop_for_beta_binomial_toxicity(
       dose = 1, tox_threshold = tgt,
-      confidence = cutoff.eli, a = 1, b = 1
+      confidence = cutoff.eli - 0.05, a = 1, b = 1
     ) |>
     dont_skip_doses() |>
     stop_at_n(n = n_patients) |>
@@ -750,4 +752,111 @@ test_that("chained stop_for_beta_binomial_toxicity matches TITEgBOIN extrasafe",
       )
     )
   }
+})
+
+# ===== Test 18: All-toxic extrasafe — early stopping dominates ===============
+
+test_that("all-toxic scenario with extrasafe matches TITEgBOIN early stopping", {
+  skip_if_not_installed("TITEgBOIN")
+
+  # All doses above target — most trials should stop early with NoDose
+  true_prob_tox <- c(0.40, 0.50, 0.60, 0.70, 0.80)
+  tgt <- 0.25
+  num_doses <- 5
+  n_patients <- 24
+  obswin <- 56
+  accrual_interval <- 14
+  p.saf <- 0.6 * tgt
+  p.tox <- 1.4 * tgt
+  cutoff.eli <- 0.88
+  n_sims <- 300
+
+  # -- TITEgBOIN reference with extrasafe = TRUE ------------------------------
+  tg_result <- TITEgBOIN::get_oc_TITE_QuasiBOIN(
+    target     = tgt,
+    prob       = true_prob_tox,
+    score      = NA,
+    TITE       = TRUE,
+    ncohort    = n_patients,
+    cohortsize = 1,
+    maxt       = obswin,
+    accrual    = obswin / accrual_interval,
+    maxpen     = 0.5,
+    alpha1     = 0.5,
+    alpha2     = 0.5,
+    n.earlystop = 100,
+    Neli       = 3,
+    startdose  = 1,
+    p.saf      = p.saf,
+    p.tox      = p.tox,
+    cutoff.eli = cutoff.eli,
+    extrasafe  = TRUE,
+    ntrial     = n_sims,
+    seed       = 42
+  )
+
+  tg_sel_prop <- tg_result$selpercent / 100
+  tg_no_dose <- tg_result$percentstop / 100
+
+  # -- dtptite: chained elimination + extra-safe stop -------------------------
+  # Extrasafe offset: TITEgBOIN uses cutoff.eli - 0.05 for dose 1
+  design <- get_boin_tite(num_doses, tgt, p.saf = p.saf, p.tox = p.tox) |>
+    stop_for_beta_binomial_toxicity(
+      dose = "any", tox_threshold = tgt,
+      confidence = cutoff.eli, a = 1, b = 1
+    ) |>
+    stop_for_beta_binomial_toxicity(
+      dose = 1, tox_threshold = tgt,
+      confidence = cutoff.eli - 0.05, a = 1, b = 1
+    ) |>
+    dont_skip_doses() |>
+    stop_at_n(n = n_patients) |>
+    select_boin_mtd()
+
+  set.seed(42)
+  ps_list <- tite_patient_samples(
+    num_sims = n_sims, max_time = obswin, num_patients = 100
+  )
+
+  set.seed(42)
+  result <- simulate_compare(
+    list("boin" = design),
+    num_sims = n_sims,
+    true_prob_tox = true_prob_tox,
+    max_time = obswin,
+    sample_patient_arrivals = function(df) data.frame(time_delta = accrual_interval),
+    patient_samples = ps_list
+  )
+
+  our_pr <- prob_recommend(result$boin)
+  our_no_dose <- our_pr["NoDose"]
+  our_sel <- as.numeric(our_pr[as.character(1:num_doses)])
+
+  # Early stopping should dominate — NoDose > 50%
+  expect_gt(our_no_dose, 0.50,
+    label = sprintf("NoDose=%.1f%% should be > 50%%", our_no_dose * 100))
+
+  # NoDose and selection probabilities within 10% tolerance
+  nodose_diff <- abs(our_no_dose - tg_no_dose)
+  expect_lt(nodose_diff, 0.10,
+    label = sprintf(
+      "NoDose diff (dtptite=%.1f%%, TITEgBOIN=%.1f%%, diff=%.1f%%)",
+      our_no_dose * 100, tg_no_dose * 100, nodose_diff * 100
+    )
+  )
+
+  abs_diff <- abs(our_sel - tg_sel_prop)
+  for (d in seq_len(num_doses)) {
+    expect_lt(abs_diff[d], 0.10,
+      label = sprintf(
+        "Dose %d diff (dtptite=%.1f%%, TITEgBOIN=%.1f%%, diff=%.1f%%)",
+        d, our_sel[d] * 100, tg_sel_prop[d] * 100, abs_diff[d] * 100
+      )
+    )
+  }
+
+  # Mean patients enrolled should be well below max (early stopping works)
+  mean_np <- mean(num_patients(result$boin))
+  expect_lt(mean_np, n_patients,
+    label = sprintf("Mean patients=%.1f should be < %d", mean_np, n_patients))
 })
