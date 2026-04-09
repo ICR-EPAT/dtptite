@@ -240,9 +240,6 @@ test_that("String dose level like '1' is rejected", {
   )
 })
 
-# ===== Test 10c: dose="recommended" when parent recommends NA =============
-
-
 # ===== Test 10d: parent stops first =======================================
 
 test_that("continue=FALSE when parent stops but beta-binom would not", {

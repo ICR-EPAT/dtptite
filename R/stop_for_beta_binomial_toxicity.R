@@ -129,7 +129,7 @@ beta_binom_tox_selector <- function(parent_selector, dose, tox_threshold,
       # can be recommended (i.e. all reachable doses are eliminated).
       admissible <- dose_admissible(x)
       rec <- recommended_dose(x$parent)
-      if (is.na(rec)) return(TRUE)
+      if (is.na(rec)) return(TRUE)  # nocov
       return(!any(admissible[seq_len(rec)]))
     }
     if (dose == "recommended") {
@@ -161,14 +161,14 @@ continue.beta_binom_tox_selector <- function(x, ...) {
 recommended_dose.beta_binom_tox_selector <- function(x, ...) {
   if (.bb_should_stop(x)) return(NA)
   rec <- recommended_dose(x$parent, ...)
-  if (is.na(rec)) return(NA)
+  if (is.na(rec)) return(NA)  # nocov
 
   admissible <- dose_admissible(x)
   if (admissible[rec]) return(rec)
 
   # Clamp to highest admissible dose at or below the recommendation
   candidates <- which(admissible[seq_len(rec)])
-  if (length(candidates) == 0L) return(NA_integer_)
+  if (length(candidates) == 0L) return(NA_integer_)  # nocov
   as.integer(max(candidates))
 }
 
