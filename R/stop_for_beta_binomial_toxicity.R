@@ -24,6 +24,9 @@
 #' @param a,b Beta prior hyperparameters. When `NULL` (default), resolved
 #'   at fit time from `tox_target()` of the parent selector:
 #'   `a = tox_target, b = 1 - tox_target`.
+#' @param n_min Minimum number of patients at a dose required before the
+#'   exceedance check fires (default: `1`). Mirrors TITEgBOIN's `Neli`
+#'   parameter — set to `3` to match TITEgBOIN's default elimination rule.
 #' @return A `beta_binom_tox_selector_factory` object.
 #' @export
 stop_for_beta_binomial_toxicity <- function(parent_selector_factory,
@@ -31,7 +34,8 @@ stop_for_beta_binomial_toxicity <- function(parent_selector_factory,
                                             tox_threshold,
                                             confidence = 0.88,
                                             a = NULL,
-                                            b = NULL) {
+                                            b = NULL,
+                                            n_min = 1) {
   if (is.character(dose)) {
     if (!identical(dose, "recommended") && !identical(dose, "any")) {
       stop("'dose' must be numeric, \"recommended\", or \"any\"")
@@ -45,6 +49,7 @@ stop_for_beta_binomial_toxicity <- function(parent_selector_factory,
             confidence > 0, confidence < 1)
   if (!is.null(a)) stopifnot(is.numeric(a), length(a) == 1, a > 0)
   if (!is.null(b)) stopifnot(is.numeric(b), length(b) == 1, b > 0)
+  stopifnot(is.numeric(n_min), length(n_min) == 1, n_min >= 1)
 
   x <- list(
     parent = parent_selector_factory,
@@ -52,7 +57,8 @@ stop_for_beta_binomial_toxicity <- function(parent_selector_factory,
     tox_threshold = tox_threshold,
     confidence = confidence,
     a = a,
-    b = b
+    b = b,
+    n_min = n_min
   )
   class(x) <- c("beta_binom_tox_selector_factory",
                  "derived_dose_selector_factory",
@@ -79,21 +85,23 @@ fit.beta_binom_tox_selector_factory <- function(selector_factory,
     tox_threshold = selector_factory$tox_threshold,
     confidence = selector_factory$confidence,
     a = a,
-    b = b
+    b = b,
+    n_min = selector_factory$n_min
   )
 }
 
 # -- Selector constructor ----------------------------------------------
 
 beta_binom_tox_selector <- function(parent_selector, dose, tox_threshold,
-                                    confidence, a, b) {
+                                    confidence, a, b, n_min) {
   l <- list(
     parent = parent_selector,
     dose = dose,
     tox_threshold = tox_threshold,
     confidence = confidence,
     a = a,
-    b = b
+    b = b,
+    n_min = n_min
   )
   class(l) <- c("beta_binom_tox_selector",
                  "derived_dose_selector",
@@ -110,7 +118,7 @@ beta_binom_tox_selector <- function(parent_selector, dose, tox_threshold,
 
   exceedance <- rep(NA_real_, nd)
   for (j in seq_len(nd)) {
-    if (n_at[j] == 0) next
+    if (n_at[j] < x$n_min) next
     exceedance[j] <- 1 - pbeta(x$tox_threshold,
                                 x$a + s_at[j],
                                 x$b + n_at[j] - s_at[j])
