@@ -206,9 +206,15 @@ set_dtp_queue_size <- function(dtp_selector_factory, queue_size) {
 
     # Re-evaluate DTP decision
     if (!dtp_should_wait(fit) || !continue(fit) || is.na(next_dose)) {
+      ended_by <- if (!continue(fit) || is.na(next_dose)) {
+        "stopped"
+      } else {
+        "dtp_decision"
+      }
       return(list(
         time_now = time_now, fit = fit, next_dose = next_dose,
-        all_data = all_data, tite_data = tite_data
+        all_data = all_data, tite_data = tite_data,
+        ended_by = ended_by
       ))
     }
 
@@ -247,7 +253,8 @@ set_dtp_queue_size <- function(dtp_selector_factory, queue_size) {
 
   list(
     time_now = time_now, fit = fit, next_dose = next_dose,
-    all_data = all_data, tite_data = tite_data
+    all_data = all_data, tite_data = tite_data,
+    ended_by = "wait_end"
   )
 }
 
@@ -327,6 +334,10 @@ phase1_dtp_tite_sim <- function(selector_factory, true_prob_tox,
   cohort_size <- NULL  # inferred from first sample_patient_arrivals call
   queue_size <- if (!is.null(dtp_fac)) dtp_fac$sim_settings$queue_size else NULL
   # queue_size NULL means "default to cohort_size" — resolved after first call
+
+  # DTP wait event log: one record per wait fired in this trial. Populated
+  # only when a dtp_selector_factory is in the chain; stays empty otherwise.
+  dtp_wait_events <- list()
 
   # -- Main loop -----------------------------------------------------------
   while (continue(fit_obj) & !is.na(next_dose) &
@@ -432,6 +443,11 @@ phase1_dtp_tite_sim <- function(selector_factory, true_prob_tox,
       wait_time_val <- dtp_wait_time(fit_obj)
       wait_end <- time_now + wait_time_val
 
+      # Capture pre-wait state for the event log
+      time_before <- time_now
+      dose_before <- next_dose
+      fit_before  <- fit_obj
+
       # A. Consume arrivals during wait window
       queued_arrival_times <- .consume_arrivals(
         time_now = time_now,
@@ -440,6 +456,7 @@ phase1_dtp_tite_sim <- function(selector_factory, true_prob_tox,
         sample_patient_arrivals = sample_patient_arrivals,
         all_data = all_data
       )
+      queue_this_wait <- length(queued_arrival_times)
 
       # B. Event-driven wait (DLTs from enrolled patients)
       wait_result <- .advance_wait_with_events(
@@ -460,6 +477,28 @@ phase1_dtp_tite_sim <- function(selector_factory, true_prob_tox,
       fit_obj <- wait_result$fit
       next_dose <- wait_result$next_dose
       all_data <- wait_result$all_data
+
+      dose_delta <- if (is.na(next_dose) || is.na(dose_before)) {
+        NA_integer_
+      } else {
+        as.integer(next_dose - dose_before)
+      }
+      effective <- (wait_result$ended_by != "wait_end") ||
+        !identical(as.integer(dose_before), as.integer(next_dose))
+
+      dtp_wait_events[[length(dtp_wait_events) + 1L]] <- list(
+        cohort_idx     = as.integer(next_cohort - 1L),
+        dose_before    = as.integer(dose_before),
+        time_in        = time_before,
+        time_out       = time_now,
+        wait_duration  = time_now - time_before,
+        projected_dose = as.integer(dtp_projected_dose(fit_before)),
+        dose_after     = as.integer(next_dose),
+        ended_by       = wait_result$ended_by,
+        dose_delta     = dose_delta,
+        effective      = isTRUE(effective),
+        queue_size     = as.integer(queue_this_wait)
+      )
     }
   }
 
@@ -499,9 +538,52 @@ phase1_dtp_tite_sim <- function(selector_factory, true_prob_tox,
     fits[[i]] <- list(.depth = i, time = time_now, fit = fit_obj)
   }
 
+  # Attach the DTP wait event log to the final fit entry. Escalation's
+  # built-in extractors only inspect `$fit` / `$time` on tail(.x, 1)[[1]]
+  # so adding a named field is non-breaking. Empty tibble (right columns,
+  # zero rows) when no waits fired — downstream accessors rely on this.
+  last_idx <- length(fits)
+  fits[[last_idx]]$dtp_wait_events <- .build_wait_events_tibble(dtp_wait_events)
+
   if (return_all_fits) {
     return(fits)
   } else {
     return(fits[length(fits)])
   }
+}
+
+# -- Internal: assemble wait event log tibble ------------------------------
+
+.wait_events_cols <- c("cohort_idx", "dose_before", "time_in", "time_out",
+                       "wait_duration", "projected_dose", "dose_after",
+                       "ended_by", "dose_delta", "effective", "queue_size")
+
+.wait_events_empty <- function() {
+  out <- data.frame(
+    cohort_idx     = integer(0),
+    dose_before    = integer(0),
+    time_in        = numeric(0),
+    time_out       = numeric(0),
+    wait_duration  = numeric(0),
+    projected_dose = integer(0),
+    dose_after     = integer(0),
+    ended_by       = factor(character(0),
+                            levels = c("wait_end", "dtp_decision", "stopped")),
+    dose_delta     = integer(0),
+    effective      = logical(0),
+    queue_size     = integer(0),
+    stringsAsFactors = FALSE
+  )
+  out
+}
+
+.build_wait_events_tibble <- function(records) {
+  if (length(records) == 0L) return(.wait_events_empty())
+  df <- dplyr::bind_rows(lapply(records, function(r) {
+    r$ended_by <- as.character(r$ended_by)
+    as.data.frame(r, stringsAsFactors = FALSE)
+  }))
+  df$ended_by <- factor(df$ended_by,
+                         levels = c("wait_end", "dtp_decision", "stopped"))
+  df[, .wait_events_cols, drop = FALSE]
 }

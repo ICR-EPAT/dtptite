@@ -7,8 +7,9 @@
 #' @importFrom BOIN get.boundary select.mtd
 #' @importFrom escalation tox cohort prob_tox_quantile median_prob_tox
 #' @importFrom escalation prob_tox_exceeds empiric_tox_rate
-#' @importFrom escalation parse_phase1_outcomes
-#' @importFrom dplyr bind_rows
+#' @importFrom escalation parse_phase1_outcomes trial_duration
+#' @importFrom dplyr bind_rows group_by summarise left_join n
+#' @importFrom tibble as_tibble tibble
 #' @importFrom stats pbeta qbeta runif
 "_PACKAGE"
 
