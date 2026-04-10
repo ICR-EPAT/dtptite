@@ -10,7 +10,8 @@ stop_for_beta_binomial_toxicity(
   tox_threshold,
   confidence = 0.88,
   a = NULL,
-  b = NULL
+  b = NULL,
+  n_min = 1
 )
 }
 \arguments{
@@ -27,6 +28,10 @@ Default: \code{1}.}
 \item{a, b}{Beta prior hyperparameters. When \code{NULL} (default), resolved
 at fit time from \code{tox_target()} of the parent selector:
 \verb{a = tox_target, b = 1 - tox_target}.}
+
+\item{n_min}{Minimum number of patients at a dose required before the
+exceedance check fires (default: \code{1}). Mirrors TITEgBOIN's \code{Neli}
+parameter — set to \code{3} to match TITEgBOIN's default elimination rule.}
 }
 \value{
 A \code{beta_binom_tox_selector_factory} object.

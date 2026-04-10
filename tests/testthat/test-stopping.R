@@ -8,11 +8,12 @@ target <- 0.25
 
 # Helper: create a fitted model with stopping rule
 fit_with_stop <- function(outcomes, dose = 1, tox_threshold = target,
-                          confidence = 0.88, a = NULL, b = NULL) {
+                          confidence = 0.88, a = NULL, b = NULL,
+                          n_min = 1) {
   model <- get_dfcrm_tite(skeleton = skeleton, target = target) %>%
     stop_for_beta_binomial_toxicity(
       dose = dose, tox_threshold = tox_threshold,
-      confidence = confidence, a = a, b = b
+      confidence = confidence, a = a, b = b, n_min = n_min
     )
   model %>% fit(outcomes)
 }
@@ -179,7 +180,7 @@ test_that("dose='recommended' checks the recommended dose", {
 
 # ===== Test 9: dose = "any" ==============================================
 
-test_that("dose='any' stops when any dose exceeds threshold", {
+test_that("dose='any' eliminates doses but continues if admissible doses remain", {
   outcomes <- data.frame(
     dose   = c(1, 1, 1, 3, 3, 3),
     tox    = c(0, 0, 0, 1, 1, 1),
@@ -188,8 +189,25 @@ test_that("dose='any' stops when any dose exceeds threshold", {
   )
 
   fit_obj <- fit_with_stop(outcomes, dose = "any")
-  # Dose 3 has 3/3 DLTs -> exceedance > 0.88 -> stop
+  # Dose 3 eliminated (3/3 DLTs) but dose 1 is safe -> trial continues
+  expect_true(continue(fit_obj))
+  expect_false(dose_admissible(fit_obj)[3])
+  # Recommended dose clamps below eliminated dose
+  expect_lte(recommended_dose(fit_obj), 2)
+})
+
+test_that("dose='any' stops when all reachable doses are eliminated", {
+  outcomes <- data.frame(
+    dose   = c(1, 1, 1),
+    tox    = c(1, 1, 1),
+    weight = c(1, 1, 1),
+    cohort = 1:3
+  )
+
+  fit_obj <- fit_with_stop(outcomes, dose = "any")
+  # Dose 1 eliminated (3/3 DLTs), no lower dose -> trial stops
   expect_false(continue(fit_obj))
+  expect_true(is.na(recommended_dose(fit_obj)))
 })
 
 # ===== Test 10: dose = vector ============================================
@@ -222,9 +240,6 @@ test_that("String dose level like '1' is rejected", {
     "\"recommended\", or \"any\""
   )
 })
-
-# ===== Test 10c: dose="recommended" when parent recommends NA =============
-
 
 # ===== Test 10d: parent stops first =======================================
 
@@ -313,19 +328,107 @@ test_that("Stopping rule chains with stop_at_n", {
 
 # ===== Test 13: dose_admissible marks toxic doses =========================
 
-test_that("dose_admissible marks toxic doses as inadmissible", {
-  outcomes <- data.frame(
+test_that("dose_admissible cascades elimination to higher doses", {
+  # Dose 1 eliminated -> all doses above also eliminated (BOIN rule)
+  outcomes_d1 <- data.frame(
     dose   = c(1, 1, 1, 2, 2, 2),
     tox    = c(1, 1, 1, 0, 0, 0),
     weight = c(1, 1, 1, 1, 1, 1),
     cohort = 1:6
   )
 
-  fit_obj <- fit_with_stop(outcomes, dose = "any")
+  fit_obj <- fit_with_stop(outcomes_d1, dose = "any")
   admissible <- dose_admissible(fit_obj)
 
-  # Dose 1 should be inadmissible (3/3 DLTs)
   expect_false(admissible[1])
-  # Dose 2 should be admissible (0/3 DLTs)
-  expect_true(admissible[2])
+  # Cascade: dose 2+ also eliminated even though 0/3 DLTs
+  expect_false(admissible[2])
+
+  # Dose 3 eliminated -> doses 4-5 also eliminated, doses 1-2 safe
+  outcomes_d3 <- data.frame(
+    dose   = c(1,1,1, 2,2,2, 3,3,3),
+    tox    = c(0,0,0, 0,0,0, 1,1,1),
+    weight = rep(1, 9),
+    cohort = 1:9
+  )
+
+  fit_d3 <- fit_with_stop(outcomes_d3, dose = "any")
+  admissible_d3 <- dose_admissible(fit_d3)
+
+  expect_true(admissible_d3[1])
+  expect_true(admissible_d3[2])
+  expect_false(admissible_d3[3])
+  expect_false(admissible_d3[4])  # cascade
+  expect_false(admissible_d3[5])  # cascade
+})
+
+# ===== Test 14: n_min gates the elimination check ========================
+
+test_that("n_min defers elimination until enough patients enrolled", {
+  # 1/1 DLT at dose 1 — with default Beta(0.25, 0.75), exceedance is high
+  outcomes_1 <- data.frame(
+    dose   = 1,
+    tox    = 1,
+    weight = 1,
+    cohort = 1
+  )
+
+  # n_min = 1 (default): fires with 1 patient
+  fit_default <- fit_with_stop(outcomes_1, a = 1, b = 1)
+  expect_false(continue(fit_default))
+
+  # n_min = 3: defers elimination (only 1 patient enrolled)
+  fit_nmin3 <- fit_with_stop(outcomes_1, a = 1, b = 1, n_min = 3)
+  expect_true(continue(fit_nmin3))
+  expect_true(is.na(dtptite:::.bb_exceedance_probs(fit_nmin3)[1]))
+})
+
+test_that("n_min fires once threshold is reached", {
+  # 3/3 DLTs at dose 1
+  outcomes_3 <- data.frame(
+    dose   = c(1, 1, 1),
+    tox    = c(1, 1, 1),
+    weight = c(1, 1, 1),
+    cohort = 1:3
+  )
+
+  # n_min = 3: fires with 3 patients
+  fit_obj <- fit_with_stop(outcomes_3, a = 1, b = 1, n_min = 3)
+  expect_false(continue(fit_obj))
+})
+
+test_that("n_min gates elimination with dose='any'", {
+  # 1/1 DLT at dose 3 — with default Beta(0.25, 0.75), high exceedance
+  outcomes <- data.frame(
+    dose   = c(1, 1, 1, 3),
+    tox    = c(0, 0, 0, 1),
+    weight = c(1, 1, 1, 1),
+    cohort = 1:4
+  )
+
+  # n_min = 1: dose 3 eliminated (and cascade to 4-5)
+  fit_default <- fit_with_stop(outcomes, dose = "any", a = 1, b = 1)
+  admissible_d <- dose_admissible(fit_default)
+  expect_true(admissible_d[1])
+  expect_true(admissible_d[2])
+  expect_false(admissible_d[3])
+
+  # n_min = 3: dose 3 has only 1 patient, no elimination
+  fit_nmin3 <- fit_with_stop(outcomes, dose = "any", a = 1, b = 1, n_min = 3)
+  admissible_n <- dose_admissible(fit_nmin3)
+  expect_true(all(admissible_n))
+})
+
+test_that("n_min validates input", {
+  model <- get_dfcrm_tite(skeleton = skeleton, target = target)
+  expect_error(
+    stop_for_beta_binomial_toxicity(
+      model, dose = 1, tox_threshold = target, n_min = 0
+    )
+  )
+  expect_error(
+    stop_for_beta_binomial_toxicity(
+      model, dose = 1, tox_threshold = target, n_min = "three"
+    )
+  )
 })

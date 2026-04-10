@@ -7,6 +7,7 @@
 # -- Decision function -------------------------------------------------------
 
 .boin_tite_decision <- function(s, n0, args) {
+  if (n0 == 0) return("stay")
   phat <- s / n0
   if (phat <= args$lambda_e) return("escalate")
   if (phat >= args$lambda_d) return("deescalate")
