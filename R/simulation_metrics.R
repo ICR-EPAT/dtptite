@@ -32,7 +32,15 @@
 #'   `simulations_collection`), `cohort_idx`, `dose_before`, `time_in`,
 #'   `time_out`, `wait_duration`, `projected_dose`, `dose_after`,
 #'   `ended_by` (factor: `wait_end`/`dtp_decision`/`stopped`), `dose_delta`,
-#'   `effective`, `queue_size`.
+#'   `effective`, `projection_realized`, `num_extensions`, `queue_size`.
+#'
+#'   `wait_duration` is the total elapsed time between when the wait was
+#'   triggered and when it ended, including any extensions caused by
+#'   in-wait DLT events: each such event prompts a re-fit, and if the
+#'   updated fit still requests a wait the original `wait_end` is bumped
+#'   out. `num_extensions` records how many times that happened (0 means
+#'   the wait ran exactly to its initial projection); as a result
+#'   `wait_duration` can exceed the design's `t_max`.
 #' @export
 dtp_wait_events <- function(x, ...) UseMethod("dtp_wait_events")
 
@@ -70,16 +78,29 @@ dtp_wait_events.simulations_collection <- function(x, ...) {
 #' - `num_waits` — how often DTP fired in this trial
 #' - `total_wait_time` — sum of wait durations
 #' - `wait_fraction` — `total_wait_time / trial_duration`, a single
-#'   comparable "DTP overhead" number
-#' - `max_wait_time` — longest single wait (for slot / IRB conversations)
-#' - `num_effective_waits` — number of waits where the `effective` flag is
-#'   TRUE on the event log, i.e. the wait changed the dose recommendation
-#'   or ended in a trial-terminating state
+#'   comparable "DTP overhead" number. The denominator is the full trial
+#'   calendar time as returned by [escalation::trial_duration()], which
+#'   includes the post-loop "advance to full follow-up" tail. Use the raw
+#'   event log if you need a decision-phase-only denominator.
+#' - `max_wait_time` — longest single wait (for slot / IRB conversations).
+#'   Can exceed `t_max` when an in-wait DLT triggers an extension; see
+#'   [dtp_wait_events()].
+#' - `num_effective_waits` — number of waits where the post-wait
+#'   recommendation was strictly higher than the pre-wait recommendation
+#'   (`dose_after > dose_before`). Captures both outright escalations and
+#'   waits that recovered from an otherwise unnecessary de-escalation.
+#' - `num_projection_realized` — number of waits that ran to their
+#'   initially-projected end (`ended_by == "wait_end"`) AND whose
+#'   post-wait recommendation matched DTP's pre-wait projection exactly
+#'   (`dose_after == projected_dose`). A useful calibration signal: high
+#'   values mean the projection engine is trustworthy; low values mean
+#'   pending-DLT realisations frequently derail it.
 #'
 #' With `by_dose = TRUE`, one row per (replicate × `dose_before`).
-#' `wait_fraction` (needs a whole-trial denominator) and `max_wait_time`
-#' (uninformative on a single-dose slice) are dropped, and a
-#' `mean_wait_time` column is added.
+#' `wait_fraction` (needs a whole-trial denominator) is dropped and a
+#' `mean_wait_time` column is added; `max_wait_time`,
+#' `num_effective_waits`, and `num_projection_realized` are retained per
+#' dose level.
 #'
 #' Non-DTP designs — those whose simulation did not attach a wait event log
 #' at all — return all-`NA` metric columns so that users can distinguish
@@ -109,11 +130,13 @@ dtp_wait_summary.simulations <- function(x, by_dose = FALSE, ...) {
   }, logical(1))
 
   if (by_dose) {
-    cols <- c("replicate", "dose", "num_waits", "total_wait_time",
-              "mean_wait_time", "num_effective_waits")
+    cols <- c("replicate", "dose_before", "num_waits", "total_wait_time",
+              "mean_wait_time", "max_wait_time", "num_effective_waits",
+              "num_projection_realized")
   } else {
     cols <- c("replicate", "num_waits", "total_wait_time", "wait_fraction",
-              "max_wait_time", "num_effective_waits")
+              "max_wait_time", "num_effective_waits",
+              "num_projection_realized")
   }
 
   # Non-DTP design: all-NA metrics, one row per replicate
@@ -129,21 +152,25 @@ dtp_wait_summary.simulations <- function(x, by_dose = FALSE, ...) {
     # One row per (replicate × dose_before) actually observed in the log.
     if (nrow(ev) == 0L) {
       out <- tibble::tibble(
-        replicate           = integer(0),
-        dose                = integer(0),
-        num_waits           = integer(0),
-        total_wait_time     = numeric(0),
-        mean_wait_time      = numeric(0),
-        num_effective_waits = integer(0)
+        replicate               = integer(0),
+        dose_before             = integer(0),
+        num_waits               = integer(0),
+        total_wait_time         = numeric(0),
+        mean_wait_time          = numeric(0),
+        max_wait_time           = numeric(0),
+        num_effective_waits     = integer(0),
+        num_projection_realized = integer(0)
       )
       return(out)
     }
     out <- dplyr::summarise(
-      dplyr::group_by(ev, replicate, dose = dose_before),
-      num_waits           = dplyr::n(),
-      total_wait_time     = sum(wait_duration),
-      mean_wait_time      = mean(wait_duration),
-      num_effective_waits = sum(effective),
+      dplyr::group_by(ev, replicate, dose_before),
+      num_waits               = dplyr::n(),
+      total_wait_time         = sum(wait_duration),
+      mean_wait_time          = mean(wait_duration),
+      max_wait_time           = max(wait_duration),
+      num_effective_waits     = sum(effective),
+      num_projection_realized = sum(projection_realized),
       .groups = "drop"
     )
     return(tibble::as_tibble(out[, cols, drop = FALSE]))
@@ -154,19 +181,21 @@ dtp_wait_summary.simulations <- function(x, by_dose = FALSE, ...) {
   if (nrow(ev) > 0L) {
     agg <- dplyr::summarise(
       dplyr::group_by(ev, replicate),
-      num_waits           = dplyr::n(),
-      total_wait_time     = sum(wait_duration),
-      max_wait_time       = max(wait_duration),
-      num_effective_waits = sum(effective),
+      num_waits               = dplyr::n(),
+      total_wait_time         = sum(wait_duration),
+      max_wait_time           = max(wait_duration),
+      num_effective_waits     = sum(effective),
+      num_projection_realized = sum(projection_realized),
       .groups = "drop"
     )
   } else {
     agg <- tibble::tibble(
-      replicate           = integer(0),
-      num_waits           = integer(0),
-      total_wait_time     = numeric(0),
-      max_wait_time       = numeric(0),
-      num_effective_waits = integer(0)
+      replicate               = integer(0),
+      num_waits               = integer(0),
+      total_wait_time         = numeric(0),
+      max_wait_time           = numeric(0),
+      num_effective_waits     = integer(0),
+      num_projection_realized = integer(0)
     )
   }
 
@@ -176,10 +205,12 @@ dtp_wait_summary.simulations <- function(x, by_dose = FALSE, ...) {
   out$total_wait_time[is.na(out$total_wait_time)] <- 0
   out$max_wait_time[is.na(out$max_wait_time)] <- 0
   out$num_effective_waits[is.na(out$num_effective_waits)] <- 0L
+  out$num_projection_realized[is.na(out$num_projection_realized)] <- 0L
 
-  # wait_fraction = total_wait_time / per-replicate trial duration
-  dur <- tryCatch(trial_duration(x), error = function(e) rep(NA_real_, n_rep))
-  if (length(dur) != n_rep) dur <- rep(NA_real_, n_rep)
+  # wait_fraction = total_wait_time / per-replicate trial duration. Trust
+  # escalation::trial_duration() to return one value per replicate; if it
+  # ever doesn't, that's an upstream bug worth surfacing.
+  dur <- trial_duration(x)
   out$wait_fraction <- ifelse(dur > 0, out$total_wait_time / dur, NA_real_)
 
   out[, cols, drop = FALSE]
@@ -195,5 +226,6 @@ dtp_wait_summary.simulations_collection <- function(x, by_dose = FALSE, ...) {
 
 # Silence R CMD check NOTE: undefined globals used via NSE in dplyr calls
 utils::globalVariables(c(
-  "replicate", "dose_before", "wait_duration", "effective"
+  "replicate", "dose_before", "wait_duration", "effective",
+  "projection_realized"
 ))

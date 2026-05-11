@@ -27,17 +27,30 @@ With the default \code{by_dose = FALSE}, one row per replicate with columns:
 \item \code{num_waits} — how often DTP fired in this trial
 \item \code{total_wait_time} — sum of wait durations
 \item \code{wait_fraction} — \code{total_wait_time / trial_duration}, a single
-comparable "DTP overhead" number
-\item \code{max_wait_time} — longest single wait (for slot / IRB conversations)
-\item \code{num_effective_waits} — number of waits where the \code{effective} flag is
-TRUE on the event log, i.e. the wait changed the dose recommendation
-or ended in a trial-terminating state
+comparable "DTP overhead" number. The denominator is the full trial
+calendar time as returned by \code{\link[escalation:trial_duration]{escalation::trial_duration()}}, which
+includes the post-loop "advance to full follow-up" tail. Use the raw
+event log if you need a decision-phase-only denominator.
+\item \code{max_wait_time} — longest single wait (for slot / IRB conversations).
+Can exceed \code{t_max} when an in-wait DLT triggers an extension; see
+\code{\link[=dtp_wait_events]{dtp_wait_events()}}.
+\item \code{num_effective_waits} — number of waits where the post-wait
+recommendation was strictly higher than the pre-wait recommendation
+(\code{dose_after > dose_before}). Captures both outright escalations and
+waits that recovered from an otherwise unnecessary de-escalation.
+\item \code{num_projection_realized} — number of waits that ran to their
+initially-projected end (\code{ended_by == "wait_end"}) AND whose
+post-wait recommendation matched DTP's pre-wait projection exactly
+(\code{dose_after == projected_dose}). A useful calibration signal: high
+values mean the projection engine is trustworthy; low values mean
+pending-DLT realisations frequently derail it.
 }
 
 With \code{by_dose = TRUE}, one row per (replicate × \code{dose_before}).
-\code{wait_fraction} (needs a whole-trial denominator) and \code{max_wait_time}
-(uninformative on a single-dose slice) are dropped, and a
-\code{mean_wait_time} column is added.
+\code{wait_fraction} (needs a whole-trial denominator) is dropped and a
+\code{mean_wait_time} column is added; \code{max_wait_time},
+\code{num_effective_waits}, and \code{num_projection_realized} are retained per
+dose level.
 
 Non-DTP designs — those whose simulation did not attach a wait event log
 at all — return all-\code{NA} metric columns so that users can distinguish

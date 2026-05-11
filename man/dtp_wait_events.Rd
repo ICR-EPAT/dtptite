@@ -16,7 +16,15 @@ A tibble with columns \code{replicate} (and \code{design} for a
 \code{simulations_collection}), \code{cohort_idx}, \code{dose_before}, \code{time_in},
 \code{time_out}, \code{wait_duration}, \code{projected_dose}, \code{dose_after},
 \code{ended_by} (factor: \code{wait_end}/\code{dtp_decision}/\code{stopped}), \code{dose_delta},
-\code{effective}, \code{queue_size}.
+\code{effective}, \code{projection_realized}, \code{num_extensions}, \code{queue_size}.
+
+\code{wait_duration} is the total elapsed time between when the wait was
+triggered and when it ended, including any extensions caused by
+in-wait DLT events: each such event prompts a re-fit, and if the
+updated fit still requests a wait the original \code{wait_end} is bumped
+out. \code{num_extensions} records how many times that happened (0 means
+the wait ran exactly to its initial projection); as a result
+\code{wait_duration} can exceed the design's \code{t_max}.
 }
 \description{
 Returns a tidy tibble with one row per DTP wait event fired across all
