@@ -308,6 +308,24 @@ test_that("queue_size=2 still doses full cohorts of 3", {
   expect_equal(num_patients(final_fit) %% 3, 0)
 })
 
+test_that("extended waits can fill queue from incremental window", {
+  arrivals <- function(df) {
+    data.frame(time_delta = c(4, 4, 4))
+  }
+
+  out <- .extend_queued_arrivals(
+    queued_arrival_times = c(103),
+    old_wait_end = 110,
+    new_wait_end = 120,
+    queue_size = 3,
+    sample_patient_arrivals = arrivals,
+    all_data = data.frame()
+  )
+
+  # Existing one + two from (110, 120], capped at queue_size = 3.
+  expect_equal(out, c(103, 114, 118))
+})
+
 # ===== Test 9: tite_patient_samples =======================================
 
 test_that("tite_patient_samples creates correct tox_time distribution", {

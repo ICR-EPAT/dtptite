@@ -105,13 +105,39 @@ set_dtp_queue_size <- function(dtp_selector_factory, queue_size) {
   queued_times
 }
 
+# -- Internal: extend queued arrivals over incremental wait window ----------
+
+.extend_queued_arrivals <- function(queued_arrival_times,
+                                    old_wait_end,
+                                    new_wait_end,
+                                    queue_size,
+                                    sample_patient_arrivals,
+                                    all_data) {
+  if (new_wait_end <= old_wait_end) return(queued_arrival_times)
+  remaining_capacity <- queue_size - length(queued_arrival_times)
+  if (remaining_capacity <= 0) return(queued_arrival_times)
+
+  added <- .consume_arrivals(
+    time_now = old_wait_end,
+    wait_end = new_wait_end,
+    queue_size = remaining_capacity,
+    sample_patient_arrivals = sample_patient_arrivals,
+    all_data = all_data
+  )
+  c(queued_arrival_times, added)
+}
+
 # -- Internal: event-driven wait loop --------------------------------------
 
 .advance_wait_with_events <- function(time_now, wait_end,
                                       tite_dose, tite_time, tite_cohort,
                                       base_df, patient_sample,
                                       true_prob_tox, selector_factory,
-                                      max_time, get_weight) {
+                                      max_time, get_weight,
+                                      queued_arrival_times,
+                                      queue_size,
+                                      sample_patient_arrivals,
+                                      all_data) {
   # Count how many times an in-wait DLT-driven re-fit caused wait_end to be
   # bumped further out. 0 means the wait ran on its initially-projected
   # schedule; >0 means the wait was chained by mid-wait events.
@@ -219,13 +245,23 @@ set_dtp_queue_size <- function(dtp_selector_factory, queue_size) {
         time_now = time_now, fit = fit, next_dose = next_dose,
         all_data = all_data, tite_data = tite_data,
         ended_by = ended_by,
-        num_extensions = num_extensions
+        num_extensions = num_extensions,
+        queued_arrival_times = queued_arrival_times
       ))
     }
 
     # Update wait_end based on new DTP assessment. This is an extension —
     # the wait will run past its previous wait_end.
+    old_wait_end <- wait_end
     wait_end <- time_now + dtp_wait_time(fit)
+    queued_arrival_times <- .extend_queued_arrivals(
+      queued_arrival_times = queued_arrival_times,
+      old_wait_end = old_wait_end,
+      new_wait_end = wait_end,
+      queue_size = queue_size,
+      sample_patient_arrivals = sample_patient_arrivals,
+      all_data = all_data
+    )
     num_extensions <- num_extensions + 1L
   }
 
@@ -262,7 +298,8 @@ set_dtp_queue_size <- function(dtp_selector_factory, queue_size) {
     time_now = time_now, fit = fit, next_dose = next_dose,
     all_data = all_data, tite_data = tite_data,
     ended_by = "wait_end",
-    num_extensions = num_extensions
+    num_extensions = num_extensions,
+    queued_arrival_times = queued_arrival_times
   )
 }
 
@@ -464,7 +501,6 @@ phase1_dtp_tite_sim <- function(selector_factory, true_prob_tox,
         sample_patient_arrivals = sample_patient_arrivals,
         all_data = all_data
       )
-      queue_this_wait <- length(queued_arrival_times)
 
       # B. Event-driven wait (DLTs from enrolled patients)
       wait_result <- .advance_wait_with_events(
@@ -478,13 +514,19 @@ phase1_dtp_tite_sim <- function(selector_factory, true_prob_tox,
         true_prob_tox = true_prob_tox,
         selector_factory = selector_factory,
         max_time = max_time,
-        get_weight = get_weight
+        get_weight = get_weight,
+        queued_arrival_times = queued_arrival_times,
+        queue_size = queue_size,
+        sample_patient_arrivals = sample_patient_arrivals,
+        all_data = all_data
       )
 
       time_now <- wait_result$time_now
       fit_obj <- wait_result$fit
       next_dose <- wait_result$next_dose
       all_data <- wait_result$all_data
+      queued_arrival_times <- wait_result$queued_arrival_times
+      queue_this_wait <- length(queued_arrival_times)
 
       dose_delta <- if (is.na(next_dose) || is.na(dose_before)) {
         NA_integer_
