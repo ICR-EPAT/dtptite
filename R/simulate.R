@@ -537,30 +537,27 @@ phase1_dtp_tite_sim <- function(selector_factory, true_prob_tox,
       # `effective`: the wait moved the recommendation strictly upward
       # compared to the pre-wait recommendation. With DTP's invariant
       # `dose_before <= dose_current`, this captures both outright
-      # escalations and recovered de-escalations.
+      # escalations and recovered de-escalations. (`projection_realized`
+      # was previously a separate flag here; dropped because for monotone
+      # TITE-CRM/BOIN with integer dose levels and projected_dose ≈
+      # dose_before + 1, it is row-for-row identical to `effective`. The
+      # raw `projected_dose` column is retained for audit.)
       effective <- !is.na(dose_before) && !is.na(next_dose) &&
         as.integer(next_dose) > as.integer(dose_before)
-      # `projection_realized`: the wait ran to completion AND the post-wait
-      # recommendation matches DTP's pre-wait projection exactly. Anything
-      # else (early termination, mismatch with projection) is FALSE.
-      projection_realized <- identical(wait_result$ended_by, "wait_end") &&
-        !is.na(next_dose) && !is.na(projected_dose) &&
-        as.integer(next_dose) == projected_dose
 
       dtp_wait_events[[length(dtp_wait_events) + 1L]] <- list(
-        cohort_idx          = as.integer(next_cohort - 1L),
-        dose_before         = as.integer(dose_before),
-        time_in             = time_before,
-        time_out            = time_now,
-        wait_duration       = time_now - time_before,
-        projected_dose      = projected_dose,
-        dose_after          = as.integer(next_dose),
-        ended_by            = wait_result$ended_by,
-        dose_delta          = dose_delta,
-        effective           = isTRUE(effective),
-        projection_realized = isTRUE(projection_realized),
-        num_extensions      = as.integer(wait_result$num_extensions),
-        queue_size          = as.integer(queue_this_wait)
+        cohort_idx     = as.integer(next_cohort - 1L),
+        dose_before    = as.integer(dose_before),
+        time_in        = time_before,
+        time_out       = time_now,
+        wait_duration  = time_now - time_before,
+        projected_dose = projected_dose,
+        dose_after     = as.integer(next_dose),
+        ended_by       = wait_result$ended_by,
+        dose_delta     = dose_delta,
+        effective      = isTRUE(effective),
+        num_extensions = as.integer(wait_result$num_extensions),
+        queue_size     = as.integer(queue_this_wait)
       )
     }
   }
@@ -620,24 +617,23 @@ phase1_dtp_tite_sim <- function(selector_factory, true_prob_tox,
 .wait_events_cols <- c("cohort_idx", "dose_before", "time_in", "time_out",
                        "wait_duration", "projected_dose", "dose_after",
                        "ended_by", "dose_delta", "effective",
-                       "projection_realized", "num_extensions", "queue_size")
+                       "num_extensions", "queue_size")
 
 .wait_events_empty <- function() {
   out <- data.frame(
-    cohort_idx          = integer(0),
-    dose_before         = integer(0),
-    time_in             = numeric(0),
-    time_out            = numeric(0),
-    wait_duration       = numeric(0),
-    projected_dose      = integer(0),
-    dose_after          = integer(0),
-    ended_by            = factor(character(0),
-                                 levels = c("wait_end", "dtp_decision", "stopped")),
-    dose_delta          = integer(0),
-    effective           = logical(0),
-    projection_realized = logical(0),
-    num_extensions      = integer(0),
-    queue_size          = integer(0),
+    cohort_idx     = integer(0),
+    dose_before    = integer(0),
+    time_in        = numeric(0),
+    time_out       = numeric(0),
+    wait_duration  = numeric(0),
+    projected_dose = integer(0),
+    dose_after     = integer(0),
+    ended_by       = factor(character(0),
+                            levels = c("wait_end", "dtp_decision", "stopped")),
+    dose_delta     = integer(0),
+    effective      = logical(0),
+    num_extensions = integer(0),
+    queue_size     = integer(0),
     stringsAsFactors = FALSE
   )
   out

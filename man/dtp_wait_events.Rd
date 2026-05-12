@@ -16,7 +16,7 @@ A tibble with columns \code{replicate} (and \code{design} for a
 \code{simulations_collection}), \code{cohort_idx}, \code{dose_before}, \code{time_in},
 \code{time_out}, \code{wait_duration}, \code{projected_dose}, \code{dose_after},
 \code{ended_by} (factor: \code{wait_end}/\code{dtp_decision}/\code{stopped}), \code{dose_delta},
-\code{effective}, \code{projection_realized}, \code{num_extensions}, \code{queue_size}.
+\code{effective}, \code{num_extensions}, \code{queue_size}.
 
 \code{wait_duration} is the total elapsed time between when the wait was
 triggered and when it ended, including any extensions caused by

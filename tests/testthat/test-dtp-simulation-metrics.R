@@ -48,7 +48,7 @@ test_that("dtp_wait_events returns rows with expected columns and types", {
   expect_true(all(c("replicate", "cohort_idx", "dose_before", "time_in",
                     "time_out", "wait_duration", "projected_dose",
                     "dose_after", "ended_by", "dose_delta", "effective",
-                    "projection_realized", "num_extensions",
+                    "num_extensions",
                     "queue_size") %in% names(ev)))
   expect_gt(nrow(ev), 0)
 
@@ -57,7 +57,6 @@ test_that("dtp_wait_events returns rows with expected columns and types", {
   expect_type(ev$wait_duration, "double")
   expect_s3_class(ev$ended_by, "factor")
   expect_type(ev$effective, "logical")
-  expect_type(ev$projection_realized, "logical")
   expect_type(ev$num_extensions, "integer")
   expect_true(all(ev$wait_duration >= 0))
   expect_true(all(ev$time_out >= ev$time_in))
@@ -75,8 +74,7 @@ test_that("dtp_wait_summary: headline columns and arithmetic invariants", {
   expect_equal(nrow(smry), length(sims$fits))
   expect_setequal(names(smry),
                   c("replicate", "num_waits", "total_wait_time",
-                    "wait_fraction", "max_wait_time", "num_effective_waits",
-                    "num_projection_realized"))
+                    "wait_fraction", "max_wait_time", "num_effective_waits"))
 
   # total_wait_time per replicate matches sum of wait_duration in the log
   for (i in seq_len(nrow(smry))) {
@@ -86,12 +84,6 @@ test_that("dtp_wait_summary: headline columns and arithmetic invariants", {
     expect_equal(smry$num_waits[i], nrow(ev_i))
     expect_equal(smry$num_effective_waits[i],
                  sum(ev_i$dose_after > ev_i$dose_before, na.rm = TRUE))
-    expect_equal(
-      smry$num_projection_realized[i],
-      sum(ev_i$ended_by == "wait_end" &
-            !is.na(ev_i$dose_after) & !is.na(ev_i$projected_dose) &
-            ev_i$dose_after == ev_i$projected_dose)
-    )
   }
 
   # wait_fraction in [0, 1]; max_wait_time <= total_wait_time
@@ -99,7 +91,6 @@ test_that("dtp_wait_summary: headline columns and arithmetic invariants", {
                   na.rm = TRUE))
   expect_true(all(smry$max_wait_time <= smry$total_wait_time + 1e-9))
   expect_true(all(smry$num_effective_waits <= smry$num_waits))
-  expect_true(all(smry$num_projection_realized <= smry$num_waits))
 })
 
 # ===== (c) Raw log column types =======================================
@@ -204,8 +195,7 @@ test_that("dtp_wait_summary(by_dose=TRUE) has one row per (replicate × dose_bef
   expect_s3_class(by_d, "tbl_df")
   expect_setequal(names(by_d),
                   c("replicate", "dose_before", "num_waits", "total_wait_time",
-                    "mean_wait_time", "max_wait_time", "num_effective_waits",
-                    "num_projection_realized"))
+                    "mean_wait_time", "max_wait_time", "num_effective_waits"))
   expect_false("wait_fraction" %in% names(by_d))
   expect_false("dose" %in% names(by_d))
 
@@ -248,8 +238,7 @@ test_that("dtp_wait_events/summary on non-DTP sims: empty log, NA summary", {
   smry <- dtp_wait_summary(sims)
   expect_equal(nrow(smry), 5)
   for (col in c("num_waits", "total_wait_time", "wait_fraction",
-                "max_wait_time", "num_effective_waits",
-                "num_projection_realized")) {
+                "max_wait_time", "num_effective_waits")) {
     expect_true(all(is.na(smry[[col]])),
                 info = paste("non-DTP summary col", col, "should be all NA"))
   }
@@ -344,24 +333,6 @@ test_that("effective flag is set only when dose_after > dose_before", {
   if (any(unchanged_wait_end)) {
     expect_false(any(ev$effective[unchanged_wait_end]))
   }
-})
-
-test_that("projection_realized requires both wait_end termination and dose match", {
-  sims <- run_dtp_crm_sims(num_sims = 8)
-  ev <- dtp_wait_events(sims)
-  skip_if(nrow(ev) == 0, "no waits in fixture")
-
-  # Direct semantic check
-  expect_equal(
-    ev$projection_realized,
-    ev$ended_by == "wait_end" &
-      !is.na(ev$dose_after) & !is.na(ev$projected_dose) &
-      ev$dose_after == ev$projected_dose
-  )
-
-  # Any early-terminated wait cannot have projection_realized = TRUE
-  early <- ev$ended_by != "wait_end"
-  if (any(early)) expect_false(any(ev$projection_realized[early]))
 })
 
 test_that("num_extensions matches recorded wait_duration shape", {

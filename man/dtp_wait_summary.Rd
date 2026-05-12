@@ -38,19 +38,12 @@ Can exceed \code{t_max} when an in-wait DLT triggers an extension; see
 recommendation was strictly higher than the pre-wait recommendation
 (\code{dose_after > dose_before}). Captures both outright escalations and
 waits that recovered from an otherwise unnecessary de-escalation.
-\item \code{num_projection_realized} — number of waits that ran to their
-initially-projected end (\code{ended_by == "wait_end"}) AND whose
-post-wait recommendation matched DTP's pre-wait projection exactly
-(\code{dose_after == projected_dose}). A useful calibration signal: high
-values mean the projection engine is trustworthy; low values mean
-pending-DLT realisations frequently derail it.
 }
 
 With \code{by_dose = TRUE}, one row per (replicate × \code{dose_before}).
 \code{wait_fraction} (needs a whole-trial denominator) is dropped and a
-\code{mean_wait_time} column is added; \code{max_wait_time},
-\code{num_effective_waits}, and \code{num_projection_realized} are retained per
-dose level.
+\code{mean_wait_time} column is added; \code{max_wait_time} and
+\code{num_effective_waits} are retained per dose level.
 
 Non-DTP designs — those whose simulation did not attach a wait event log
 at all — return all-\code{NA} metric columns so that users can distinguish
