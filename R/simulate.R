@@ -304,6 +304,20 @@ set_dtp_queue_size <- function(dtp_selector_factory, queue_size) {
 }
 
 # -- Internal: main simulation function ------------------------------------
+#
+# `min_fup_time` is the minimum follow-up enforced between a cohort being
+# fully enrolled and the model being (re)fit for its dose decision. It is
+# passed through by `simulate_trials(..., min_fup_time = )`.
+#
+# Implication of the default `min_fup_time = 0`: when a cohort is dosed
+# straight from the DTP queue at the wait-end instant, all of its patients
+# have zero follow-up (weight 0) at the immediately-following fit, so they
+# contribute no information and that cohort's dose decision (including whether
+# DTP waits again) is a foregone conclusion determined by the earlier
+# patients. To have each decision rest on real follow-up, set `min_fup_time`
+# to roughly the fixed accrual interval (the per-patient inter-arrival time),
+# which delays each fit until the freshest patients have accrued weight.
+# Note this is a global timing change that shifts operating characteristics.
 
 phase1_dtp_tite_sim <- function(selector_factory, true_prob_tox,
                                 patient_sample = NULL,
@@ -526,6 +540,12 @@ phase1_dtp_tite_sim <- function(selector_factory, true_prob_tox,
       next_dose <- wait_result$next_dose
       all_data <- wait_result$all_data
       queued_arrival_times <- wait_result$queued_arrival_times
+      # An in-wait DLT can end the wait before its projected wait_end. The
+      # queue was pre-filled (.consume_arrivals / .extend_queued_arrivals)
+      # against that projected window, so drop any queued arrival dated after
+      # the actual wait end (time_now) — those patients never really arrived.
+      queued_arrival_times <-
+        queued_arrival_times[queued_arrival_times <= time_now]
       queue_this_wait <- length(queued_arrival_times)
 
       dose_delta <- if (is.na(next_dose) || is.na(dose_before)) {

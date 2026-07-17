@@ -348,3 +348,39 @@ test_that("num_extensions matches recorded wait_duration shape", {
   has_ext <- ev$num_extensions > 0L
   if (any(has_ext)) expect_true(all(ev$wait_duration[has_ext] > 0))
 })
+
+# ===== (j) Phantom queue over-fill on early wait-end =================
+# Regression guard. The queue is pre-filled against the *projected* wait_end.
+# When an in-wait DLT ends the wait early (dtp_decision / stopped), queued
+# arrivals dated after the *actual* wait end must be dropped — those patients
+# never really arrived. With deterministic arrivals spaced `spacing` apart, at
+# most floor(wait_duration / spacing) patients can have arrived within a wait,
+# so `queue_size` must respect that bound. Before the fix, an early-ended wait
+# reported a count reflecting the longer projected window (phantoms).
+
+test_that("queue is not over-filled when an in-wait DLT ends the wait early", {
+  spacing <- 7
+  arrivals_fixed <- function(df) data.frame(time_delta = rep(spacing, 3))
+  design <- get_dfcrm_tite(skeleton = skeleton, target = target) |>
+    apply_dtp(t_max = 35, obswin = 56) |>
+    stop_at_n(n = 12)
+
+  set.seed(18)
+  sims <- suppressMessages(simulate_trials(
+    design,
+    num_sims = 40,
+    true_prob_tox = c(0.20, 0.35, 0.50, 0.65, 0.80),
+    sample_patient_arrivals = arrivals_fixed,
+    max_time = 56
+  ))
+  ev <- dtp_wait_events(sims)
+
+  # Precondition: the fixture must actually contain early-ended waits,
+  # otherwise the guard would be vacuous.
+  expect_gt(nrow(ev), 0)
+  expect_true(any(ev$ended_by %in% c("dtp_decision", "stopped")))
+
+  # Core invariant: with arrivals every `spacing` units, no wait can have
+  # queued more patients than could have arrived within its actual duration.
+  expect_true(all(ev$queue_size <= floor(ev$wait_duration / spacing)))
+})
