@@ -61,11 +61,21 @@ scenario_mtd <- function(true_prob_tox, target, tol = 0.05) {
   if (!is.numeric(true_prob_tox) || !length(true_prob_tox)) {
     stop("`true_prob_tox` must be a non-empty numeric vector.", call. = FALSE)
   }
-  if (!is.numeric(target) || length(target) != 1L || is.na(target)) {
-    stop("`target` must be a single non-missing number.", call. = FALSE)
+  if (!all(is.finite(true_prob_tox))) {
+    stop("`true_prob_tox` must not contain missing or infinite values.",
+         call. = FALSE)
   }
-  if (!is.numeric(tol) || length(tol) != 1L || is.na(tol) || tol < 0) {
-    stop("`tol` must be a single non-negative number.", call. = FALSE)
+  if (any(true_prob_tox < 0) || any(true_prob_tox > 1)) {
+    stop("`true_prob_tox` must lie between 0 and 1.", call. = FALSE)
+  }
+  if (!is.numeric(target) || length(target) != 1L || !is.finite(target)) {
+    stop("`target` must be a single finite number.", call. = FALSE)
+  }
+  if (target < 0 || target > 1) {
+    stop("`target` must lie between 0 and 1.", call. = FALSE)
+  }
+  if (!is.numeric(tol) || length(tol) != 1L || !is.finite(tol) || tol < 0) {
+    stop("`tol` must be a single finite non-negative number.", call. = FALSE)
   }
 
   band <- which(abs(true_prob_tox - target) <= tol)
@@ -95,8 +105,19 @@ scenario_mtd <- function(true_prob_tox, target, tol = 0.05) {
     if (length(mtd) != 1L) {
       stop("`mtd` must be a single value (or NULL to derive it).", call. = FALSE)
     }
+    if (is.logical(mtd) && is.na(mtd)) return(NA_integer_)
+    if (!is.numeric(mtd)) {
+      stop("`mtd` must be a number (or NA/NULL).", call. = FALSE)
+    }
     if (is.na(mtd)) return(NA_integer_)
-    mtd <- as.integer(mtd)
+    if (!is.finite(mtd)) {
+      stop("`mtd` must be finite.", call. = FALSE)
+    }
+    if (abs(mtd - round(mtd)) > .Machine$double.eps^0.5) {
+      stop("`mtd` must be a whole number identifying a dose level; got ", mtd,
+           ".", call. = FALSE)
+    }
+    mtd <- as.integer(round(mtd))
     if (mtd < 1L || mtd > num_doses) {
       stop("`mtd` must lie between 1 and ", num_doses, ".", call. = FALSE)
     }
@@ -226,6 +247,14 @@ time_to_first_mtd.simulations_collection <- function(x, mtd = NULL,
   if (is.infinite(q)) NA_real_ else q
 }
 
+# Column name for one quantile probability. The percentage is not rounded, so
+# probabilities that differ get names that differ — `0.125` and `0.126` become
+# `q12.5_` and `q12.6_` rather than colliding on `q13_`. Integer percentages
+# are unaffected: `0.9` is still `q90_time_to_mtd`.
+.quantile_col_name <- function(p) {
+  paste0("q", format(p * 100, trim = TRUE), "_time_to_mtd")
+}
+
 .summarise_one <- function(d, num_sims, probs) {
   if (nrow(d) != num_sims) {
     warning("Object has ", nrow(d), " rows but the simulation ran ", num_sims,
@@ -249,8 +278,7 @@ time_to_first_mtd.simulations_collection <- function(x, mtd = NULL,
   )
 
   for (p in probs) {
-    out[[paste0("q", round(p * 100), "_time_to_mtd")]] <-
-      .cif_quantile(d$time_to_mtd, num_sims, p)
+    out[[.quantile_col_name(p)]] <- .cif_quantile(d$time_to_mtd, num_sims, p)
   }
   out
 }
@@ -274,19 +302,32 @@ time_to_first_mtd.simulations_collection <- function(x, mtd = NULL,
 #' Replicates that never reached the MTD remain in the denominator; they are
 #' not dropped. Any probability supplied in `probs` adds a
 #' `q<pct>_time_to_mtd` column, computed the same way and likewise `NA` beyond
-#' `reached_fraction`.
+#' `reached_fraction`. The percentage is not rounded, so `0.125` gives
+#' `q12.5_time_to_mtd`; distinct probabilities always get distinct columns.
 #'
 #' @param object A `time_to_first_mtd` object.
 #' @param probs Optional numeric vector of probabilities for additional
-#'   quantile columns. Default `NULL` adds none.
+#'   quantile columns. Must be distinct values between 0 and 1. Default `NULL`
+#'   adds none.
 #' @param ... Unused.
 #' @return A tibble with one row per design.
 #' @export
 summary.time_to_first_mtd <- function(object, probs = NULL, ...) {
   if (!is.null(probs)) {
-    if (!is.numeric(probs) || any(is.na(probs)) ||
+    if (!is.numeric(probs) || !all(is.finite(probs)) ||
         any(probs < 0) || any(probs > 1)) {
-      stop("`probs` must be numbers between 0 and 1.", call. = FALSE)
+      stop("`probs` must be finite numbers between 0 and 1.", call. = FALSE)
+    }
+    if (anyDuplicated(probs)) {
+      stop("`probs` must not contain duplicate values; got ",
+           paste(unique(probs[duplicated(probs)]), collapse = ", "), ".",
+           call. = FALSE)
+    }
+    names_out <- vapply(probs, .quantile_col_name, character(1))
+    if (anyDuplicated(names_out)) {
+      stop("`probs` values are too close to distinguish in column names: ",
+           paste(unique(names_out[duplicated(names_out)]), collapse = ", "),
+           ".", call. = FALSE)
     }
   }
   num_sims <- attr(object, "num_sims")

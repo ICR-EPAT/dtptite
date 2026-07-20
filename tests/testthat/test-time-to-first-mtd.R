@@ -99,8 +99,28 @@ test_that("scenario_mtd handles non-monotone scenarios by taking the lowest", {
 
 test_that("scenario_mtd validates its arguments", {
   expect_error(scenario_mtd(numeric(0), 0.25), "non-empty numeric")
-  expect_error(scenario_mtd(true_prob_tox, c(0.2, 0.3)), "single non-missing")
+  expect_error(scenario_mtd(true_prob_tox, c(0.2, 0.3)), "single finite")
   expect_error(scenario_mtd(true_prob_tox, 0.25, tol = -1), "non-negative")
+})
+
+test_that("scenario_mtd rejects missing or infinite toxicity probabilities", {
+  expect_error(scenario_mtd(c(0.05, NA, 0.25), 0.25), "missing or infinite")
+  expect_error(scenario_mtd(c(0.05, Inf, 0.25), 0.25), "missing or infinite")
+})
+
+test_that("scenario_mtd rejects toxicity probabilities outside 0 and 1", {
+  expect_error(scenario_mtd(c(0.05, 1.4), 0.25), "between 0 and 1")
+  expect_error(scenario_mtd(c(-0.1, 0.25), 0.25), "between 0 and 1")
+})
+
+test_that("scenario_mtd rejects an out-of-range or non-finite target", {
+  expect_error(scenario_mtd(true_prob_tox, NA), "single finite")
+  expect_error(scenario_mtd(true_prob_tox, Inf), "single finite")
+  expect_error(scenario_mtd(true_prob_tox, 1.5), "between 0 and 1")
+})
+
+test_that("scenario_mtd rejects a non-finite tol", {
+  expect_error(scenario_mtd(true_prob_tox, 0.25, tol = Inf), "finite")
 })
 
 # ===== (c) first-MTD event on synthetic frames =========================
@@ -190,6 +210,20 @@ test_that("summary warns when the object has been subset", {
 test_that("summary validates probs", {
   r <- time_to_first_mtd(run_no_dtp())
   expect_error(summary(r, probs = 1.5), "between 0 and 1")
+  expect_error(summary(r, probs = c(0.1, NA)), "finite numbers")
+})
+
+test_that("summary rejects duplicate probs", {
+  r <- time_to_first_mtd(run_no_dtp())
+  expect_error(summary(r, probs = c(0.1, 0.5, 0.1)), "duplicate values")
+})
+
+test_that("fractional percentages get distinct quantile columns", {
+  r <- time_to_first_mtd(run_no_dtp())
+  s <- summary(r, probs = c(0.125, 0.126))
+  expect_true(all(c("q12.5_time_to_mtd", "q12.6_time_to_mtd") %in% names(s)))
+  # integer percentages keep their existing, unrounded-looking names
+  expect_equal(names(summary(r, probs = 0.9)) |> tail(1), "q90_time_to_mtd")
 })
 
 # ===== (e) scenarios with no MTD =======================================
@@ -218,6 +252,15 @@ test_that("an explicit mtd overrides derivation and is validated", {
   expect_true(all(is.na(time_to_first_mtd(sims, mtd = NA)$mtd)))
   expect_error(time_to_first_mtd(sims, mtd = 99), "between 1 and 5")
   expect_error(time_to_first_mtd(sims, mtd = c(1, 2)), "single value")
+})
+
+test_that("a non-whole mtd is rejected rather than truncated", {
+  sims <- run_no_dtp(num_sims = 4)
+  expect_error(time_to_first_mtd(sims, mtd = 2.9), "whole number")
+  expect_error(time_to_first_mtd(sims, mtd = "2"), "must be a number")
+  expect_error(time_to_first_mtd(sims, mtd = Inf), "must be finite")
+  # whole numbers supplied as doubles still work
+  expect_equal(unique(time_to_first_mtd(sims, mtd = 2.0)$mtd), 2L)
 })
 
 # ===== (g) simulations_collection ======================================

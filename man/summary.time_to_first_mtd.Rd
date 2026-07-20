@@ -10,7 +10,8 @@
 \item{object}{A \code{time_to_first_mtd} object.}
 
 \item{probs}{Optional numeric vector of probabilities for additional
-quantile columns. Default \code{NULL} adds none.}
+quantile columns. Must be distinct values between 0 and 1. Default \code{NULL}
+adds none.}
 
 \item{...}{Unused.}
 }
@@ -38,5 +39,6 @@ replicates that reached it
 Replicates that never reached the MTD remain in the denominator; they are
 not dropped. Any probability supplied in \code{probs} adds a
 \verb{q<pct>_time_to_mtd} column, computed the same way and likewise \code{NA} beyond
-\code{reached_fraction}.
+\code{reached_fraction}. The percentage is not rounded, so \code{0.125} gives
+\code{q12.5_time_to_mtd}; distinct probabilities always get distinct columns.
 }
