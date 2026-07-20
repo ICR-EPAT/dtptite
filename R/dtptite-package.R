@@ -10,6 +10,6 @@
 #' @importFrom escalation parse_phase1_outcomes trial_duration
 #' @importFrom dplyr bind_rows group_by summarise left_join n
 #' @importFrom tibble as_tibble tibble
-#' @importFrom stats pbeta qbeta runif
+#' @importFrom stats pbeta qbeta runif quantile median qnorm
 "_PACKAGE"
 
