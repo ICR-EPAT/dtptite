@@ -391,6 +391,9 @@ summary.time_to_first_mtd <- function(object, probs = NULL, ...) {
 plot.time_to_first_mtd <- function(x, axis = c("time", "patients"),
                                    ci = FALSE, conf = 0.95, ...) {
   axis <- match.arg(axis)
+  if (!is.logical(ci) || length(ci) != 1L || is.na(ci)) {
+    stop("`ci` must be a single TRUE or FALSE.", call. = FALSE)
+  }
   if (!requireNamespace("ggplot2", quietly = TRUE)) {
     stop("Package 'ggplot2' is needed to plot; use summary() instead.",
          call. = FALSE)

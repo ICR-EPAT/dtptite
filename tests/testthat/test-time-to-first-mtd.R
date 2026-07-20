@@ -297,4 +297,6 @@ test_that("plot returns a ggplot on both axes", {
   expect_s3_class(plot(r, axis = "patients"), "ggplot")
   expect_s3_class(plot(r, ci = TRUE), "ggplot")
   expect_error(plot(r, axis = "nonsense"))
+  expect_error(plot(r, ci = "yes"), "TRUE or FALSE")
+  expect_error(plot(r, ci = NA), "TRUE or FALSE")
 })
