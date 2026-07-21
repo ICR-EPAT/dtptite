@@ -13,3 +13,6 @@
 #' @importFrom stats pbeta qbeta runif quantile median qnorm
 "_PACKAGE"
 
+# Local definition rather than base R's, which only exists from R 4.4.
+`%||%` <- function(x, y) if (is.null(x)) y else x
+

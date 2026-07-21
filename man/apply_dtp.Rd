@@ -4,7 +4,13 @@
 \alias{apply_dtp}
 \title{Apply the DTP look-ahead to a TITE selector factory.}
 \usage{
-apply_dtp(parent_selector_factory, t_max, obswin)
+apply_dtp(
+  parent_selector_factory,
+  t_max,
+  obswin,
+  projection_search = c("binary", "linear"),
+  verbose = TRUE
+)
 }
 \arguments{
 \item{parent_selector_factory}{A \code{selector_factory} (typically from
@@ -15,6 +21,19 @@ unlimited). Must use the same time unit as \code{obswin}.}
 
 \item{obswin}{DLT observation window length (e.g. 56 days or 8 weeks).
 Defines the time-weight mapping: \code{weight = time_elapsed / obswin}.}
+
+\item{projection_search}{Strategy used to locate the minimum wait time.
+\code{"binary"} (default) screens the top of the candidate range and then
+bisects, costing \verb{O(log t_max)} model fits. \code{"linear"} scans every
+candidate day, costing \code{O(t_max)} fits. Both return the same answer
+whenever the projected dose is monotone non-decreasing in wait time,
+which holds for TITE-CRM and TITE-BOIN; \code{"linear"} is retained as a
+verification oracle and an escape hatch for non-monotone parents.}
+
+\item{verbose}{If \code{TRUE} (default), emit an informational message when
+\code{t_max} covers all remaining follow-up. Set to \code{FALSE} in simulation,
+where this fires on nearly every projection. Affects messaging only,
+never the returned value.}
 }
 \value{
 A \code{dtp_selector_factory} object.
