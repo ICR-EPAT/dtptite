@@ -388,6 +388,15 @@ phase1_dtp_tite_sim <- function(selector_factory, true_prob_tox,
   t_max <- if (!is.null(dtp_fac)) dtp_fac$t_max else 0
   obswin <- if (!is.null(dtp_fac)) dtp_fac$obswin else max_time
 
+  # The "t_max covers all remaining follow-up" message is useful when fitting
+  # once on real trial data, but fires on nearly every projection here. Silence
+  # it for the duration of this simulation, then restore whatever was set.
+  if (!is.null(dtp_fac)) {
+    .verbose_before <- dtp_fac$sim_settings$verbose
+    dtp_fac$sim_settings$verbose <- FALSE
+    on.exit(dtp_fac$sim_settings$verbose <- .verbose_before, add = TRUE)
+  }
+
   # Queue: filled during DTP waits, consumed at next cohort assembly
   queued_arrival_times <- numeric(0)
   cohort_size <- NULL  # inferred from first sample_patient_arrivals call
