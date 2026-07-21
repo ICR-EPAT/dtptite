@@ -150,74 +150,71 @@ test_that("search strategy does not change simulation results", {
   expect_equal(waits(r_bin), waits(r_lin))
 })
 
-# ===== Test 4: NA-at-top-of-range fallback ================================
+# ===== Test 4: stopping rules inside the projection chain =================
 
-test_that("binary falls back to linear when the top of the range is NA", {
-  # stop_for_beta_binomial_toxicity(dose = "recommended") monitors a dose that
-  # moves with the projection, so it can return NA at high projected weight
-  # while an earlier step still escalates. Screening the top alone would then
-  # wrongly report "no wait"; the fallback must recover the linear answer.
-  inner <- function() {
+# The projection re-fits apply_dtp()'s parent at every candidate step, so a
+# stopping rule chained *before* apply_dtp is re-evaluated there and can
+# withhold a recommendation. These cover the two monitoring modes the package
+# actually uses: `dose = 1` for CRM (the default) and `dose = "any"` for BOIN
+# elimination. Both are invariant to projected weight -- exceedance is computed
+# from raw n_at_dose()/tox_at_dose() counts, which the projection never changes
+# -- so the two search strategies must agree.
+
+.stopper_chains <- list(
+  `dose = 1` = function() {
     get_dfcrm_tite(skeleton = skeleton, target = target) |>
       stop_for_beta_binomial_toxicity(
-        dose = "recommended", tox_threshold = target + 0.1, confidence = 0.7
+        dose = 1, tox_threshold = target + 0.1, confidence = 0.7
+      )
+  },
+  `dose = "any"` = function() {
+    get_boin_tite(5, target) |>
+      stop_for_beta_binomial_toxicity(
+        dose = "any", tox_threshold = target + 0.1, confidence = 0.7
       )
   }
-  bin <- inner() |> apply_dtp(t_max = 56, obswin = 56,
-                              projection_search = "binary")
-  lin <- inner() |> apply_dtp(t_max = 56, obswin = 56,
-                              projection_search = "linear")
+)
 
-  saw_na_top <- FALSE
-  for (o in .random_outcomes(seed = 4242, n_sets = 60)) {
-    f0 <- suppressMessages(fit(inner(), o))
-    if (is.na(recommended_dose(f0))) next
-
-    pending <- o$tox == 0 & o$weight < 1
-    top <- o
-    top$weight[pending] <- 1
-    if (is.na(suppressMessages(recommended_dose(fit(inner(), top))))) {
-      saw_na_top <- TRUE
+test_that("binary and linear agree with a stopping rule inside the chain", {
+  for (nm in names(.stopper_chains)) {
+    inner <- .stopper_chains[[nm]]
+    bin <- inner() |> apply_dtp(t_max = 56, obswin = 56,
+                                projection_search = "binary")
+    lin <- inner() |> apply_dtp(t_max = 56, obswin = 56,
+                                projection_search = "linear")
+    for (o in .random_outcomes(seed = 4242, n_sets = 60)) {
+      expect_equal(.projection_of(bin, o), .projection_of(lin, o), info = nm)
     }
-    expect_equal(.projection_of(bin, o), .projection_of(lin, o))
   }
-
-  # Guard the guard: if this stops holding, the test above is no longer
-  # exercising the fallback and the seed needs revisiting.
-  expect_true(saw_na_top)
 })
 
 # ===== Test 5: admissibility invariant ====================================
 
 test_that("DTP never projects a wait toward an inadmissible dose", {
-  inner <- function() {
-    get_dfcrm_tite(skeleton = skeleton, target = target) |>
-      stop_for_beta_binomial_toxicity(
-        dose = "recommended", tox_threshold = target + 0.1, confidence = 0.7
-      )
-  }
+  for (nm in names(.stopper_chains)) {
+    inner <- .stopper_chains[[nm]]
+    for (search in c("binary", "linear")) {
+      model <- inner() |> apply_dtp(t_max = 56, obswin = 56,
+                                     projection_search = search)
+      for (o in .random_outcomes(seed = 4242, n_sets = 60)) {
+        f <- suppressMessages(fit(model, o))
+        if (dtp_wait_time(f) == 0) next
 
-  for (search in c("binary", "linear")) {
-    model <- inner() |> apply_dtp(t_max = 56, obswin = 56,
-                                   projection_search = search)
-    for (o in .random_outcomes(seed = 4242, n_sets = 60)) {
-      f <- suppressMessages(fit(model, o))
-      if (dtp_wait_time(f) == 0) next
+        projected <- dtp_projected_dose(f)
+        expect_false(is.na(projected))
 
-      projected <- dtp_projected_dose(f)
-      expect_false(is.na(projected))
-
-      # Re-fit the parent chain at the projected wait to confirm the dose it
-      # lands on is one the design still permits.
-      pending <- o$tox == 0 & o$weight < 1
-      at_wait <- o
-      at_wait$weight[pending] <- pmin(
-        1, o$weight[pending] + dtp_wait_time(f) / 56
-      )
-      expect_true(
-        dose_admissible(suppressMessages(fit(inner(), at_wait)))[projected],
-        info = paste("search =", search)
-      )
+        # Re-fit the parent chain at the projected wait to confirm the dose it
+        # lands on is one the design still permits.
+        pending <- o$tox == 0 & o$weight < 1
+        at_wait <- o
+        at_wait$weight[pending] <- pmin(
+          1, o$weight[pending] + dtp_wait_time(f) / 56
+        )
+        expect_true(
+          dose_admissible(suppressMessages(fit(inner(), at_wait)))[projected],
+          info = paste(nm, "| search =", search)
+        )
+      }
     }
   }
 })

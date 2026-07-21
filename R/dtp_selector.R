@@ -209,15 +209,9 @@ fit.dtp_selector_factory <- function(selector_factory, outcomes, ...) {
 
   # The projected dose is monotone non-decreasing in wait time for TITE-CRM
   # and TITE-BOIN (extra DLT-free follow-up can only push the toxicity
-  # estimate down), so {step : hits(step)} is an up-set and the minimum can
-  # be bisected for. Screening the top of the range first also short-circuits
-  # the common case where no wait helps at all, in a single fit.
+  # estimate down)
   top <- rec_at(t_max_effective)
 
-  # A stopping rule in the parent chain can return NA at the top of the range
-  # while an earlier step still escalates, which would make the screen answer
-  # "no wait" incorrectly. NA is not confined to a terminal tail, so its
-  # boundary cannot be bisected for either -- fall back to the exhaustive scan.
   if (is.na(top)) {
     return(linear_scan())
   }
