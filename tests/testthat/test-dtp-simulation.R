@@ -436,3 +436,42 @@ test_that("default patient_sample generates tox times spanning max_time", {
   fit_data <- model_frame(final_fit)
   expect_gt(sum(fit_data$tox), 0)
 })
+
+# ===== Test 12: mid-wait DLT stop records the stopping fit (issue #30) =====
+
+test_that("mid-wait DLT stop records NA dose at the DLT stop time (not a stale pre-wait fit)", {
+  # Regression for #30: when a DLT during a DTP wait stops the trial, the
+  # terminal recorded fit must be the post-wait stopping fit (NA dose) at the
+  # DLT stop time — not the pre-wait fit (valid dose, too-short time).
+  true_prob_tox <- c(0.30, 0.45, 0.55, 0.65, 0.75)
+
+  design <- get_dfcrm_tite(skeleton = skeleton, target = target) |>
+    stop_for_beta_binomial_toxicity(dose = 1, tox_threshold = 0.25,
+                                    confidence = 0.60) |>
+    stop_at_n(n = 15) |>
+    apply_dtp(t_max = 56, obswin = 56)
+
+  set.seed(2)
+  ps <- PatientSample$new(num_patients = 30,
+                          time_to_tox_func = function() runif(1, 0, 56))
+  set.seed(10002)
+  r <- phase1_dtp_tite_sim(
+    design, true_prob_tox, patient_sample = ps,
+    sample_patient_arrivals = function(df) {
+      escalation::cohorts_of_n(n = 3, mean_time_delta = 5)
+    },
+    max_time = 56, min_fup_time = 0, return_all_fits = TRUE)
+
+  last <- r[[length(r)]]
+  we <- last$dtp_wait_events
+
+  # This seed stops because of a DLT during a DTP wait.
+  expect_true(any(we$ended_by == "stopped"))
+  stopped <- we[we$ended_by == "stopped", ][1, ]
+
+  # Stopped for toxicity -> no MTD selected on the terminal recorded fit.
+  expect_true(is.na(recommended_dose(last$fit)))
+  # Terminal recorded time is the DLT stop time, not the pre-wait time.
+  expect_equal(last$time, stopped$time_out, tolerance = 1e-6)
+  expect_gt(last$time, stopped$time_in)
+})
