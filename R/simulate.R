@@ -588,6 +588,18 @@ phase1_dtp_tite_sim <- function(selector_factory, true_prob_tox,
         num_extensions = as.integer(wait_result$num_extensions),
         queue_size     = as.integer(queue_this_wait)
       )
+
+      # Record the post-wait fit as its own trajectory entry so the terminal
+      # recorded state reflects the wait outcome. This matters most for a
+      # mid-wait DLT stop (`ended_by == "stopped"`): otherwise the pre-wait fit
+      # remains the last recorded entry, the `!is.na(next_dose)` final-analysis
+      # block is skipped, and `recommended_dose()` / `trial_duration()` report a
+      # stale dose (should be NA) at a stale, too-short time. For continuing
+      # waits this simply adds a trajectory point at the wait-end time; the next
+      # cohort's fit (or the final-analysis fit) is still recorded afterwards.
+      # See issue #30.
+      i <- i + 1
+      fits[[i]] <- list(.depth = i, time = time_now, fit = fit_obj)
     }
   }
 
