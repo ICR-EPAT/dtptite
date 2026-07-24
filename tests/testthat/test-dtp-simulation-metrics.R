@@ -74,7 +74,8 @@ test_that("dtp_wait_summary: headline columns and arithmetic invariants", {
   expect_equal(nrow(smry), length(sims$fits))
   expect_setequal(names(smry),
                   c("replicate", "num_waits", "total_wait_time",
-                    "wait_fraction", "max_wait_time", "num_effective_waits"))
+                    "wait_fraction", "max_wait_time", "num_effective_waits",
+                    "num_missed"))
 
   # total_wait_time per replicate matches sum of wait_duration in the log
   for (i in seq_len(nrow(smry))) {
@@ -195,7 +196,8 @@ test_that("dtp_wait_summary(by_dose=TRUE) has one row per (replicate × dose_bef
   expect_s3_class(by_d, "tbl_df")
   expect_setequal(names(by_d),
                   c("replicate", "dose_before", "num_waits", "total_wait_time",
-                    "mean_wait_time", "max_wait_time", "num_effective_waits"))
+                    "mean_wait_time", "max_wait_time", "num_effective_waits",
+                    "num_missed"))
   expect_false("wait_fraction" %in% names(by_d))
   expect_false("dose" %in% names(by_d))
 

@@ -308,22 +308,27 @@ test_that("queue_size=2 still doses full cohorts of 3", {
   expect_equal(num_patients(final_fit) %% 3, 0)
 })
 
-test_that("extended waits can fill queue from incremental window", {
-  arrivals <- function(df) {
-    data.frame(time_delta = c(4, 4, 4))
-  }
+test_that("the arrival stream runs on its own cursor, one patient at a time", {
+  # Replaces the old .extend_queued_arrivals test. The pool is no longer
+  # re-sampled inside a wait window; it is a single stream that the simulation
+  # draws from, so a batch boundary introduces no gap.
+  arrivals <- function(df) data.frame(time_delta = c(4, 4, 4))
+  s <- .arrival_stream(start_time = 100, sample_patient_arrivals = arrivals)
 
-  out <- .extend_queued_arrivals(
-    queued_arrival_times = c(103),
-    old_wait_end = 110,
-    new_wait_end = 120,
-    queue_size = 3,
-    sample_patient_arrivals = arrivals,
-    all_data = data.frame()
-  )
+  # First batch: 104, 108, 112. Second batch continues from 112.
+  expect_equal(s$peek(NULL), 104)
+  expect_equal(s$peek(NULL), 104)          # peek does not consume
+  expect_equal(vapply(1:6, function(i) s$take(NULL), numeric(1)),
+               c(104, 108, 112, 116, 120, 124))
+})
 
-  # Existing one + two from (110, 120], capped at queue_size = 3.
-  expect_equal(out, c(103, 114, 118))
+test_that("the arrival stream reports its batch size once", {
+  seen <- integer(0)
+  arrivals <- function(df) data.frame(time_delta = rep(7, 3))
+  s <- .arrival_stream(0, arrivals, on_first_batch = function(n) seen <<- c(seen, n))
+
+  invisible(vapply(1:5, function(i) s$take(NULL), numeric(1)))
+  expect_equal(seen, 3L)                   # fired once, not once per refill
 })
 
 # ===== Test 9: tite_patient_samples =======================================
