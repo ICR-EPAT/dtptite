@@ -16,7 +16,7 @@ A tibble with columns \code{replicate} (and \code{design} for a
 \code{simulations_collection}), \code{cohort_idx}, \code{dose_before}, \code{time_in},
 \code{time_out}, \code{wait_duration}, \code{projected_dose}, \code{dose_after},
 \code{ended_by} (factor: \code{wait_end}/\code{dtp_decision}/\code{stopped}), \code{dose_delta},
-\code{effective}, \code{num_extensions}, \code{queue_size}.
+\code{effective}, \code{num_extensions}, \code{queue_size}, \code{missed}.
 
 \code{wait_duration} is the total elapsed time between when the wait was
 triggered and when it ended, including any extensions caused by
@@ -25,6 +25,13 @@ updated fit still requests a wait the original \code{wait_end} is bumped
 out. \code{num_extensions} records how many times that happened (0 means
 the wait ran exactly to its initial projection); as a result
 \code{wait_duration} can exceed the design's \code{t_max}.
+
+\code{queue_size} and \code{missed} split the patients who presented while the
+wait was running: \code{queue_size} were held and dosed the moment it ended,
+\code{missed} arrived to a full waiting room and were never enrolled. Their
+sum is the pool's throughput over the wait. The patient who opened the
+cohort is in neither — they arrived before the wait began. See
+\code{\link[=set_dtp_queue_size]{set_dtp_queue_size()}} for the capacity that separates the two.
 }
 \description{
 Returns a tidy tibble with one row per DTP wait event fired across all
