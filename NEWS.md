@@ -12,7 +12,17 @@
   DTP trial produces one per cohort *and* one per wait, so a wait-heavy
   cohort-size-1 trial hit the cap (`max_i = 30`) and stopped early with a valid
   recommendation. `phase1_dtp_tite_sim()` now defaults `i_like_big_trials = TRUE`;
-  termination is guaranteed by the design's stopping rules.
+  termination is guaranteed by the design's stopping rules. Mixed
+  `simulate_compare()` calls should pass `i_like_big_trials = TRUE` so the
+  non-DTP baseline arm (escalation's simulator, default `FALSE`) also skips its
+  valve.
+* Renamed the `dtp_wait_events()` columns `queue_size` → `n_held` and
+  `missed` → `n_missed`, and `n_held` now counts the cohort opener. Previously
+  the opener was excluded, so `n_held` (then `queue_size`) was always 0 at cohort
+  size 1 even though one patient was held through every wait. `n_held` is now the
+  number of patients dosed at `wait_end` (>=1 for any dosing wait, up to the
+  cohort size). The `set_dtp_queue_size()` capacity parameter is unchanged.
+
 * **Behaviour change.** Fixed the simulation clock (#32), which conflated the
   accrual process with the trial timeline. `time_now` was a single cursor
   serving as both "when did the last patient arrive" and "when is the model
@@ -37,9 +47,9 @@
     compensate for the old behaviour should drop it.
   - Patients who present while the waiting room is full (capacity
     `queue_size`, default the cohort size) are no longer enrolled. This is
-    reported in the new `missed` column of `dtp_wait_events()` and
+    reported in the new `n_missed` column of `dtp_wait_events()` and
     `num_missed` in `dtp_wait_summary()`. A patient is missed exactly when
-    `wait_duration > queue_size * accrual_gap`.
+    the wait outruns the room capacity.
   - Cohort members need not share a dosing time: only patients held through a
     wait are dosed at its end, the rest on arrival.
   - Non-DTP arms dispatch to `escalation::phase1_tite_sim`, which retains the
