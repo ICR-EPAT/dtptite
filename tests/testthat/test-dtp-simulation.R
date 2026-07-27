@@ -145,7 +145,9 @@ test_that("simulate_compare runs with DTP and non-DTP designs", {
     list("base" = base_design, "dtp" = dtp_design),
     num_sims = 5,
     true_prob_tox = true_prob_tox,
-    max_time = 56
+    max_time = 56,
+    # Mixed comparison: keep the non-DTP arm off the depth valve too (#32).
+    i_like_big_trials = TRUE
   )
 
   expect_true(!is.null(result$base))

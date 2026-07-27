@@ -275,7 +275,9 @@ test_that("a collection gains a design column and per-design summaries", {
         stop_at_n(n = 18)
     ),
     num_sims = 20, true_prob_tox = true_prob_tox,
-    sample_patient_arrivals = arrivals3, max_time = 56
+    sample_patient_arrivals = arrivals3, max_time = 56,
+    # Mixed comparison: keep the non-DTP arm off the depth valve too (#32).
+    i_like_big_trials = TRUE
   )
   r <- suppressWarnings(time_to_first_mtd(sc))
   expect_true("design" %in% names(r))

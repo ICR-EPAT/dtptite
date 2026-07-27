@@ -188,35 +188,49 @@ test_that("a mid-wait DLT ends the wait early and de-escalates the waiting cohor
 
 # --- the waiting room and its cost ----------------------------------------
 
+test_that("n_held counts the opener, so a cohort-1 wait reports 1 (not 0)", {
+  # Regression: n_held used to subtract the opener, so it was always 0 at
+  # cohort size 1 even though exactly one patient was held through the wait.
+  f <- run(t_max = 35, n = 8, cohort_size = 1, ps = sample_dlt_at(2),
+           tp = rep(0.30, 5))
+  ev <- f[[length(f)]]$dtp_wait_events
+  dosing <- ev[ev$ended_by != "stopped", ]
+  expect_gt(nrow(dosing), 0)
+  expect_true(all(dosing$n_held == 1))
+})
+
 test_that("patients are missed exactly when the wait outruns the room", {
-  # A patient is missed iff wait_duration > queue_size * accrual_gap.
+  # A patient is missed iff more arrive during the wait than the room can hold.
   f1 <- run(t_max = 35, n = 8, cohort_size = 1, ps = sample_dlt_at(2),
             tp = rep(0.30, 5))
   ev1 <- f1[[length(f1)]]$dtp_wait_events
-  expect_true("missed" %in% names(ev1))
-  expect_equal(ev1$missed, pmax(0, floor(ev1$wait_duration / 14) - ev1$queue_size))
+  expect_true("n_missed" %in% names(ev1))
+  # held-during-wait = n_held - 1 (the opener is always held); everything else
+  # that arrived within the wait window is missed.
+  expect_equal(ev1$n_missed,
+               pmax(0, floor(ev1$wait_duration / 14) - (ev1$n_held - 1)))
 
   # Cohort 3 has a room three times as large, so short waits cost nothing.
   f3 <- run(t_max = 35, n = 12, cohort_size = 3, ps = sample_dlt_at(2),
             tp = rep(0.30, 5))
   ev3 <- f3[[length(f3)]]$dtp_wait_events
-  expect_true(all(ev3$wait_duration[ev3$missed == 0] <= 3 * 14))
+  expect_true(all(ev3$wait_duration[ev3$n_missed == 0] <= 3 * 14))
 })
 
-test_that("queue_size and missed split the arrivals during a wait", {
+test_that("n_held and n_missed split the arrivals during a wait", {
   f <- run(t_max = 35, n = 8, cohort_size = 1, ps = sample_dlt_at(2),
            tp = rep(0.30, 5))
   ev <- f[[length(f)]]$dtp_wait_events
 
-  # Everyone who presents during a wait is either held or turned away. The
-  # cohort opener is in neither -- they arrived before the wait began.
-  expect_equal(ev$queue_size + ev$missed, floor(ev$wait_duration / 14))
+  # Everyone who presents during a wait is either held or turned away. n_held
+  # also counts the opener (arrived before the wait), so subtract it here.
+  expect_equal((ev$n_held - 1) + ev$n_missed, floor(ev$wait_duration / 14))
 })
 
-test_that("the empty wait-event log carries the missed column", {
+test_that("the empty wait-event log carries the n_missed column", {
   f <- run(t_max = 0, n = 6, cohort_size = 1, ps = sample_no_dlt())
   ev <- f[[length(f)]]$dtp_wait_events
 
   expect_equal(nrow(ev), 0)
-  expect_true("missed" %in% names(ev))
+  expect_true(all(c("n_held", "n_missed") %in% names(ev)))
 })
