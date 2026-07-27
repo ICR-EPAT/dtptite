@@ -32,7 +32,7 @@
 #'   `simulations_collection`), `cohort_idx`, `dose_before`, `time_in`,
 #'   `time_out`, `wait_duration`, `projected_dose`, `dose_after`,
 #'   `ended_by` (factor: `wait_end`/`dtp_decision`/`stopped`), `dose_delta`,
-#'   `effective`, `num_extensions`, `queue_size`, `missed`.
+#'   `effective`, `num_extensions`, `n_held`, `n_missed`.
 #'
 #'   `wait_duration` is the total elapsed time between when the wait was
 #'   triggered and when it ended, including any extensions caused by
@@ -42,12 +42,12 @@
 #'   the wait ran exactly to its initial projection); as a result
 #'   `wait_duration` can exceed the design's `t_max`.
 #'
-#'   `queue_size` and `missed` split the patients who presented while the
-#'   wait was running: `queue_size` were held and dosed the moment it ended,
-#'   `missed` arrived to a full waiting room and were never enrolled. Their
-#'   sum is the pool's throughput over the wait. The patient who opened the
-#'   cohort is in neither — they arrived before the wait began. See
-#'   [set_dtp_queue_size()] for the capacity that separates the two.
+#'   `n_held` is the number of patients held through the wait and dosed at
+#'   `wait_end`, **including** the cohort opener (the patient the wait is for);
+#'   it is at least 1 for any wait that doses and ranges up to the cohort size.
+#'   `n_missed` is the number who arrived while the wait was running to a full
+#'   waiting room and were never enrolled. See [set_dtp_queue_size()] for the
+#'   room capacity that bounds `n_held` and produces `n_missed`.
 #' @export
 dtp_wait_events <- function(x, ...) UseMethod("dtp_wait_events")
 
@@ -96,9 +96,10 @@ dtp_wait_events.simulations_collection <- function(x, ...) {
 #'   recommendation was strictly higher than the pre-wait recommendation
 #'   (`dose_after > dose_before`). Captures both outright escalations and
 #'   waits that recovered from an otherwise unnecessary de-escalation.
-#' - `num_missed` — patients who presented during a wait to a full waiting
-#'   room and were never enrolled. This is DTP's accrual cost, and is zero
-#'   whenever no wait ran longer than `queue_size * accrual_gap`.
+#' - `num_missed` — per-trial sum of the event-log `n_missed`: patients who
+#'   presented during a wait to a full waiting room and were never enrolled.
+#'   This is DTP's accrual cost, and is zero whenever no wait ran longer than
+#'   the room capacity allows.
 #'
 #' With `by_dose = TRUE`, one row per (replicate × `dose_before`).
 #' `wait_fraction` (needs a whole-trial denominator) is dropped and a
@@ -172,7 +173,7 @@ dtp_wait_summary.simulations <- function(x, by_dose = FALSE, ...) {
       mean_wait_time      = mean(wait_duration),
       max_wait_time       = max(wait_duration),
       num_effective_waits = sum(effective),
-      num_missed          = sum(missed),
+      num_missed          = sum(n_missed),
       .groups = "drop"
     )
     return(tibble::as_tibble(out[, cols, drop = FALSE]))
@@ -187,7 +188,7 @@ dtp_wait_summary.simulations <- function(x, by_dose = FALSE, ...) {
       total_wait_time     = sum(wait_duration),
       max_wait_time       = max(wait_duration),
       num_effective_waits = sum(effective),
-      num_missed          = sum(missed),
+      num_missed          = sum(n_missed),
       .groups = "drop"
     )
   } else {

@@ -12,8 +12,8 @@ set_dtp_queue_size(dtp_selector_factory, queue_size)
 
 \item{queue_size}{Integer >= 0, and no greater than the cohort size.
 Default (when not set) equals the cohort size, inferred at simulation time
-from the first \code{sample_patient_arrivals} call. \code{0} means no patient may be
-held, so every arrival during a wait is missed.}
+from the first \code{sample_patient_arrivals} call. Values below 1 behave as 1;
+see Details.}
 }
 \value{
 The modified \code{dtp_selector_factory} (invisibly).
@@ -24,10 +24,16 @@ pool of available patients keeps accruing. Patients who present during a
 wait are held — up to \code{queue_size} of them — and dosed at the post-wait
 recommendation the moment the wait ends. Patients who present when the room
 is already full are \strong{not enrolled}; they are the accrual cost of waiting,
-reported as the \code{missed} column of \code{\link[=dtp_wait_events]{dtp_wait_events()}}.
+reported as the \code{n_missed} column of \code{\link[=dtp_wait_events]{dtp_wait_events()}}.
 }
 \details{
 A patient is therefore missed exactly when
 \code{wait_duration > queue_size * accrual_gap}, which concentrates the cost at
 small cohort sizes.
+
+The patient whose arrival opened the cohort is always held — they are the
+reason the wait is being taken — so they occupy one slot and values below 1
+behave as 1. At cohort size 1 the capacity therefore cannot bind: a
+single-patient cohort has no room for anyone else whatever this is set to.
+The knob only does work for cohorts of 2 or more.
 }

@@ -56,18 +56,24 @@ tite_patient_samples <- function(num_sims, max_time, num_patients = 100) {
 #' wait are held — up to `queue_size` of them — and dosed at the post-wait
 #' recommendation the moment the wait ends. Patients who present when the room
 #' is already full are **not enrolled**; they are the accrual cost of waiting,
-#' reported as the `missed` column of [dtp_wait_events()].
+#' reported as the `n_missed` column of [dtp_wait_events()].
 #'
 #' A patient is therefore missed exactly when
 #' `wait_duration > queue_size * accrual_gap`, which concentrates the cost at
 #' small cohort sizes.
 #'
+#' The patient whose arrival opened the cohort is always held — they are the
+#' reason the wait is being taken — so they occupy one slot and values below 1
+#' behave as 1. At cohort size 1 the capacity therefore cannot bind: a
+#' single-patient cohort has no room for anyone else whatever this is set to.
+#' The knob only does work for cohorts of 2 or more.
+#'
 #' @param dtp_selector_factory A `dtp_selector_factory` created by
 #'   [apply_dtp()].
 #' @param queue_size Integer >= 0, and no greater than the cohort size.
 #'   Default (when not set) equals the cohort size, inferred at simulation time
-#'   from the first `sample_patient_arrivals` call. `0` means no patient may be
-#'   held, so every arrival during a wait is missed.
+#'   from the first `sample_patient_arrivals` call. Values below 1 behave as 1;
+#'   see Details.
 #' @return The modified `dtp_selector_factory` (invisibly).
 #' @export
 set_dtp_queue_size <- function(dtp_selector_factory, queue_size) {
@@ -369,7 +375,7 @@ phase1_dtp_tite_sim <- function(selector_factory, true_prob_tox,
                                 # valve (which counts entries) would truncate a
                                 # wait-heavy trial before it enrols its planned
                                 # sample. Termination is guaranteed by the
-                                # design's stopping rules.
+                                # design's stopping rules. See issue #32.
                                 i_like_big_trials = TRUE,
                                 return_all_fits = FALSE) {
 
@@ -579,10 +585,13 @@ phase1_dtp_tite_sim <- function(selector_factory, true_prob_tox,
         dose_delta     = dose_delta,
         effective      = isTRUE(effective),
         num_extensions = as.integer(wait_result$num_extensions),
-        # Patients who arrived during the wait: held vs turned away. The
-        # cohort opener is excluded from both — they arrived before it began.
-        queue_size     = as.integer(length(room) - 1L),
-        missed         = n_missed
+        # n_held: patients held through the wait and dosed at wait_end,
+        # including the cohort opener (the patient the wait is for). Always >= 1
+        # for a wait that doses; ranges 1..cohort_size.
+        # n_missed: patients who arrived while the wait was running to a full
+        # room and were never enrolled.
+        n_held         = as.integer(length(room)),
+        n_missed       = n_missed
       )
 
       # Record the post-wait fit as its own trajectory entry so the terminal
@@ -656,7 +665,7 @@ phase1_dtp_tite_sim <- function(selector_factory, true_prob_tox,
 .wait_events_cols <- c("cohort_idx", "dose_before", "time_in", "time_out",
                        "wait_duration", "projected_dose", "dose_after",
                        "ended_by", "dose_delta", "effective",
-                       "num_extensions", "queue_size", "missed")
+                       "num_extensions", "n_held", "n_missed")
 
 .wait_events_empty <- function() {
   out <- data.frame(
@@ -672,8 +681,8 @@ phase1_dtp_tite_sim <- function(selector_factory, true_prob_tox,
     dose_delta     = integer(0),
     effective      = logical(0),
     num_extensions = integer(0),
-    queue_size     = integer(0),
-    missed         = integer(0),
+    n_held         = integer(0),
+    n_missed       = integer(0),
     stringsAsFactors = FALSE
   )
   out
