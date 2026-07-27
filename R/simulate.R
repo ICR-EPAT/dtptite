@@ -331,7 +331,13 @@ phase1_dtp_tite_sim <- function(selector_factory, true_prob_tox,
                                 max_time,
                                 min_fup_time = 0,
                                 get_weight = escalation::linear_follow_up_weight,
-                                i_like_big_trials = FALSE,
+                                # Default TRUE: a DTP trial records a trajectory
+                                # entry per cohort AND per wait, so the depth
+                                # valve (which counts entries) would truncate a
+                                # wait-heavy trial before it enrols its planned
+                                # sample. Termination is guaranteed by the
+                                # design's stopping rules.
+                                i_like_big_trials = TRUE,
                                 return_all_fits = FALSE) {
 
   if (length(max_time) > 1 | max_time <= 0) {
