@@ -1,5 +1,12 @@
 # dtptite 0.0.0.9000
 
+* Fixed wait-heavy DTP trials terminating before enrolling their planned sample
+  (#32). The depth safety valve counted recorded trajectory entries, of which a
+  DTP trial produces one per cohort *and* one per wait, so a wait-heavy
+  cohort-size-1 trial hit the cap (`max_i = 30`) and stopped early with a valid
+  recommendation. `phase1_dtp_tite_sim()` now defaults `i_like_big_trials = TRUE`;
+  termination is guaranteed by the design's stopping rules.
+
 * Fixed a DTP simulation bug (#30) where a trial stopped by a DLT *during* a
   wait recorded the stale pre-wait fit as its terminal state, so
   `recommended_dose()` returned a valid dose instead of `NA` and
