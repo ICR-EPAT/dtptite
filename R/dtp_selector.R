@@ -112,8 +112,15 @@ fit.dtp_selector_factory <- function(selector_factory, outcomes, ...) {
     projected_dose = NA_integer_
   )
 
+  # Nothing to project toward once the recommendation is already the top dose:
+  # `.dtp_project()` only reports a wait when the projected dose rises strictly
+  # above `dose_recommended`, which no amount of follow-up can do here. Given
+  # the `dose_recommended <= dose_current` guard below, this is exactly the
+  # "at the top dose and staying" case; a de-escalation off the top dose still
+  # projects, since recovering to the top dose is a genuine hit.
   if (!is.na(dose_recommended) && !is.na(dose_current) &&
-      dose_recommended <= dose_current && selector_factory$t_max > 0) {
+      dose_recommended <= dose_current && selector_factory$t_max > 0 &&
+      dose_recommended < num_doses(parent_selector)) {
     projection <- .dtp_project(
       parent_factory = selector_factory$parent,
       outcomes = outcomes,

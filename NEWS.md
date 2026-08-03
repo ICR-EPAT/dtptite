@@ -1,5 +1,12 @@
 # dtptite 0.0.0.9000
 
+* `fit.dtp_selector_factory()` now skips the wait projection when the parent's
+  recommendation is already the top dose. `.dtp_project()` only reports a wait
+  when the projected dose rises strictly above the recommendation, which is
+  unsatisfiable there, so this is behaviour-preserving and saves one parent fit
+  per occurrence. A de-escalation off the top dose still projects, since
+  recovering to the top dose is a genuine hit.
+
 * Fixed wait-heavy DTP trials terminating before enrolling their planned sample
   (#32). The depth safety valve counted recorded trajectory entries, of which a
   DTP trial produces one per cohort *and* one per wait, so a wait-heavy
