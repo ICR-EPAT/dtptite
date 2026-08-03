@@ -49,17 +49,31 @@ tite_patient_samples <- function(num_sims, max_time, num_patients = 100) {
 
 # -- Exported: set_dtp_queue_size ------------------------------------------
 
-#' Set the queue size for DTP simulation.
+#' Set the waiting-room capacity for DTP simulation.
 #'
-#' During a DTP wait, patients who arrive are queued (up to `queue_size`)
-#' and dosed at the post-wait recommendation. Queued patients replace
-#' (part of) the next cohort — they are not additional enrolments.
+#' Recruitment onto the trial is shut for the duration of a DTP wait, but the
+#' pool of available patients keeps accruing. Patients who present during a
+#' wait are held — up to `queue_size` of them — and dosed at the post-wait
+#' recommendation the moment the wait ends. Patients who present when the room
+#' is already full are **not enrolled**; they are the accrual cost of waiting,
+#' reported as the `n_missed` column of [dtp_wait_events()].
+#'
+#' A patient is therefore missed exactly when
+#' `wait_duration > queue_size * accrual_gap`, which concentrates the cost at
+#' small cohort sizes.
+#'
+#' The patient whose arrival opened the cohort is always held — they are the
+#' reason the wait is being taken — so they occupy one slot and values below 1
+#' behave as 1. At cohort size 1 the capacity therefore cannot bind: a
+#' single-patient cohort has no room for anyone else whatever this is set to.
+#' The knob only does work for cohorts of 2 or more.
 #'
 #' @param dtp_selector_factory A `dtp_selector_factory` created by
 #'   [apply_dtp()].
-#' @param queue_size Integer >= 0. Default (when not set) equals the
-#'   cohort size (inferred at simulation time from the first
-#'   `sample_patient_arrivals` call).
+#' @param queue_size Integer >= 0, and no greater than the cohort size.
+#'   Default (when not set) equals the cohort size, inferred at simulation time
+#'   from the first `sample_patient_arrivals` call. Values below 1 behave as 1;
+#'   see Details.
 #' @return The modified `dtp_selector_factory` (invisibly).
 #' @export
 set_dtp_queue_size <- function(dtp_selector_factory, queue_size) {
@@ -80,51 +94,78 @@ set_dtp_queue_size <- function(dtp_selector_factory, queue_size) {
   NULL
 }
 
-# -- Internal: consume arrivals during wait --------------------------------
+# -- Internal: patient arrival stream --------------------------------------
 
-.consume_arrivals <- function(time_now, wait_end, queue_size,
-                              sample_patient_arrivals, all_data) {
-  if (queue_size == 0) return(numeric(0))
+# The pool of available patients runs on its own cursor, advanced only by
+# sampled inter-arrival times. Nothing on the trial timeline -- a minimum
+# follow-up period, a DTP wait -- may move it, which is what keeps recruitment
+# on its true rhythm.
+#
+# `sample_patient_arrivals` yields a cohort's worth of deltas per call, but the
+# simulation consumes patients one at a time (to open a cohort, to fill the
+# waiting room during a wait, and to decide who is turned away), so arrivals are
+# buffered. `on_first_batch` fires once, with the batch size, so the caller can
+# infer the cohort size.
+.arrival_stream <- function(start_time, sample_patient_arrivals,
+                            on_first_batch = NULL) {
+  cursor <- start_time
+  buffer <- numeric(0)
+  seen_first <- FALSE
 
-  queued_times <- numeric(0)
-  cursor <- time_now
-
-  while (length(queued_times) < queue_size && cursor < wait_end) {
-    new_pts <- sample_patient_arrivals(all_data)
-    arrival_deltas <- cumsum(new_pts$time_delta)
-    abs_times <- cursor + arrival_deltas
-
-    for (t in abs_times) {
-      if (t > wait_end) break
-      if (length(queued_times) >= queue_size) break
-      queued_times <- c(queued_times, t)
+  refill <- function(df) {
+    deltas <- sample_patient_arrivals(df)$time_delta
+    if (!seen_first) {
+      seen_first <<- TRUE
+      if (!is.null(on_first_batch)) on_first_batch(length(deltas))
     }
-    cursor <- cursor + sum(new_pts$time_delta)
+    abs_times <- cursor + cumsum(deltas)
+    cursor <<- abs_times[length(abs_times)]
+    buffer <<- c(buffer, abs_times)
+    invisible(NULL)
   }
 
-  queued_times
+  list(
+    peek = function(df) {
+      if (length(buffer) == 0) refill(df)
+      buffer[1]
+    },
+    take = function(df) {
+      if (length(buffer) == 0) refill(df)
+      a <- buffer[1]
+      buffer <<- buffer[-1]
+      a
+    }
+  )
 }
 
-# -- Internal: extend queued arrivals over incremental wait window ----------
+# -- Internal: patient frame as of a given instant --------------------------
 
-.extend_queued_arrivals <- function(queued_arrival_times,
-                                    old_wait_end,
-                                    new_wait_end,
-                                    queue_size,
-                                    sample_patient_arrivals,
-                                    all_data) {
-  if (new_wait_end <= old_wait_end) return(queued_arrival_times)
-  remaining_capacity <- queue_size - length(queued_arrival_times)
-  if (remaining_capacity <= 0) return(queued_arrival_times)
-
-  added <- .consume_arrivals(
-    time_now = old_wait_end,
-    wait_end = new_wait_end,
-    queue_size = remaining_capacity,
-    sample_patient_arrivals = sample_patient_arrivals,
-    all_data = all_data
+# Toxicity status and TITE weight of every dosed patient, evaluated at
+# `now_time`. `time` is the *dosing* time, which is when follow-up starts, and
+# which for a patient held through a DTP wait is later than their arrival.
+.tite_frame <- function(tite_cohort, tite_dose, tite_time, now_time,
+                        patient_sample, true_prob_tox, get_weight, max_time) {
+  out <- data.frame(
+    cohort = tite_cohort,
+    dose = tite_dose,
+    time = tite_time
   )
-  c(queued_arrival_times, added)
+  out$tox <- if (nrow(out) > 0) {
+    patient_sample$get_patient_tox(
+      i = seq_along(tite_dose),
+      prob_tox = true_prob_tox[tite_dose],
+      time = now_time - tite_time
+    )
+  } else {
+    integer(0)
+  }
+  out$weight <- get_weight(
+    now_time = now_time,
+    recruited_time = out$time,
+    tox = out$tox,
+    max_time = max_time
+  )
+  out
 }
 
 # -- Internal: event-driven wait loop --------------------------------------
@@ -134,9 +175,6 @@ set_dtp_queue_size <- function(dtp_selector_factory, queue_size) {
                                       base_df, patient_sample,
                                       true_prob_tox, selector_factory,
                                       max_time, get_weight,
-                                      queued_arrival_times,
-                                      queue_size,
-                                      sample_patient_arrivals,
                                       all_data) {
   # Count how many times an in-wait DLT-driven re-fit caused wait_end to be
   # bumped further out. 0 means the wait ran on its initially-projected
@@ -245,23 +283,15 @@ set_dtp_queue_size <- function(dtp_selector_factory, queue_size) {
         time_now = time_now, fit = fit, next_dose = next_dose,
         all_data = all_data, tite_data = tite_data,
         ended_by = ended_by,
-        num_extensions = num_extensions,
-        queued_arrival_times = queued_arrival_times
+        num_extensions = num_extensions
       ))
     }
 
     # Update wait_end based on new DTP assessment. This is an extension —
-    # the wait will run past its previous wait_end.
-    old_wait_end <- wait_end
+    # the wait will run past its previous wait_end. The waiting room is filled
+    # by the caller once the wait resolves, against the final wait end, so a
+    # chained wait needs no arrival bookkeeping here.
     wait_end <- time_now + dtp_wait_time(fit)
-    queued_arrival_times <- .extend_queued_arrivals(
-      queued_arrival_times = queued_arrival_times,
-      old_wait_end = old_wait_end,
-      new_wait_end = wait_end,
-      queue_size = queue_size,
-      sample_patient_arrivals = sample_patient_arrivals,
-      all_data = all_data
-    )
     num_extensions <- num_extensions + 1L
   }
 
@@ -298,26 +328,35 @@ set_dtp_queue_size <- function(dtp_selector_factory, queue_size) {
     time_now = time_now, fit = fit, next_dose = next_dose,
     all_data = all_data, tite_data = tite_data,
     ended_by = "wait_end",
-    num_extensions = num_extensions,
-    queued_arrival_times = queued_arrival_times
+    num_extensions = num_extensions
   )
 }
 
 # -- Internal: main simulation function ------------------------------------
 #
-# `min_fup_time` is the minimum follow-up enforced between a cohort being
-# fully enrolled and the model being (re)fit for its dose decision. It is
-# passed through by `simulate_trials(..., min_fup_time = )`.
+# Two clocks, deliberately kept apart (see issue #32):
 #
-# Implication of the default `min_fup_time = 0`: when a cohort is dosed
-# straight from the DTP queue at the wait-end instant, all of its patients
-# have zero follow-up (weight 0) at the immediately-following fit, so they
-# contribute no information and that cohort's dose decision (including whether
-# DTP waits again) is a foregone conclusion determined by the earlier
-# patients. To have each decision rest on real follow-up, set `min_fup_time`
-# to roughly the fixed accrual interval (the per-patient inter-arrival time),
-# which delays each fit until the freshest patients have accrued weight.
-# Note this is a global timing change that shifts operating characteristics.
+#   * the pool timeline, carried by `.arrival_stream()`, advanced only by
+#     sampled inter-arrival times;
+#   * the trial timeline (`time_now`), carrying model updates, DTP waits and
+#     dosing.
+#
+# They meet at a dose-decision epoch. A cohort opens when its first patient
+# arrives; the model is fit *then*, before anyone in that cohort is dosed, so
+# the recommendation applies to the patients actually in front of it. DTP is an
+# add-on to that update: a wait moves the earliest time the cohort may be
+# dosed, never the time the model updates.
+#
+# `min_fup_time` is an inter-cohort stagger floor -- the decision for the next
+# cohort is held until the last dosed cohort has this much follow-up. It is
+# never added to the pool cursor, so raising it does not stretch the accrual
+# rhythm. Default 0, which leaves updates purely accrual-driven; it is
+# non-binding whenever the accrual gap already exceeds it.
+#
+# Patients arriving while the waiting room is full (capacity `queue_size`,
+# default the cohort size) are not enrolled. This bounds how many patients can
+# be dosed at one instant and makes DTP's accrual cost explicit: a patient is
+# missed exactly when `wait_duration > queue_size * accrual_gap`.
 
 phase1_dtp_tite_sim <- function(selector_factory, true_prob_tox,
                                 patient_sample = NULL,
@@ -336,7 +375,7 @@ phase1_dtp_tite_sim <- function(selector_factory, true_prob_tox,
                                 # valve (which counts entries) would truncate a
                                 # wait-heavy trial before it enrols its planned
                                 # sample. Termination is guaranteed by the
-                                # design's stopping rules.
+                                # design's stopping rules. See issue #32.
                                 i_like_big_trials = TRUE,
                                 return_all_fits = FALSE) {
 
@@ -403,11 +442,33 @@ phase1_dtp_tite_sim <- function(selector_factory, true_prob_tox,
     on.exit(dtp_fac$sim_settings$verbose <- .verbose_before, add = TRUE)
   }
 
-  # Queue: filled during DTP waits, consumed at next cohort assembly
-  queued_arrival_times <- numeric(0)
-  cohort_size <- NULL  # inferred from first sample_patient_arrivals call
-  queue_size <- if (!is.null(dtp_fac)) dtp_fac$sim_settings$queue_size else NULL
-  # queue_size NULL means "default to cohort_size" — resolved after first call
+  # Waiting-room capacity. NULL means "default to the cohort size", resolved
+  # when the arrival stream reports its first batch.
+  cohort_size <- NULL
+  queue_size <- NULL
+  requested_queue_size <- if (!is.null(dtp_fac)) {
+    dtp_fac$sim_settings$queue_size
+  } else {
+    NULL
+  }
+
+  arrivals <- .arrival_stream(
+    start_time = time_now,
+    sample_patient_arrivals = sample_patient_arrivals,
+    on_first_batch = function(n) {
+      cohort_size <<- n
+      queue_size <<- if (is.null(requested_queue_size)) n else {
+        if (requested_queue_size > n) {
+          stop("queue_size (", requested_queue_size,
+               ") must be <= cohort_size (", n, ")")
+        }
+        requested_queue_size
+      }
+    }
+  )
+
+  # Earliest time the trial may dose: when the last cohort finished dosing.
+  gate <- time_now
 
   # DTP wait event log: one record per wait fired in this trial. Populated
   # only when a dtp_selector_factory is in the chain; stays empty otherwise.
@@ -417,89 +478,22 @@ phase1_dtp_tite_sim <- function(selector_factory, true_prob_tox,
   while (continue(fit_obj) & !is.na(next_dose) &
          (i_like_big_trials | i < max_i)) {
 
-    # ── ASSEMBLE NEXT COHORT ──────────────────────────────────────────────
-    # Produces: recruit_abs_times (absolute recruitment times for new patients)
-    #           time_span (time from first to last patient arrival, for clock advance)
-    if (!is.null(cohort_size) && length(queued_arrival_times) >= cohort_size) {
-      # Queue already has a full cohort — they're already here, dose them now
-      queued_arrival_times <- queued_arrival_times[-seq_len(cohort_size)]
-      n_new_pts <- cohort_size
-      recruit_abs_times <- rep(time_now, cohort_size)
-      time_span <- 0
-
-    } else if (length(queued_arrival_times) > 0) {
-      # Partial queue — queued patients dosed now, fill remaining from arrivals
-      n_queued <- length(queued_arrival_times)
-      remaining <- cohort_size - n_queued
-      fresh <- sample_patient_arrivals(all_data)
-      n_fresh <- min(remaining, nrow(fresh))
-      fresh_cumdeltas <- cumsum(fresh$time_delta[seq_len(n_fresh)])
-
-      recruit_abs_times <- c(
-        rep(time_now, n_queued),
-        time_now + fresh_cumdeltas
-      )
-      time_span <- fresh_cumdeltas[n_fresh]
-      n_new_pts <- n_queued + n_fresh
-      queued_arrival_times <- numeric(0)
-
+    # ── OPEN THE COHORT ───────────────────────────────────────────────────
+    # A cohort opens when its first patient arrives. The decision epoch is the
+    # first moment at which that patient is present, the trial is free to dose,
+    # and the stagger floor has elapsed.
+    first_arrival <- arrivals$take(all_data)
+    stagger_floor <- if (length(tite_time) > 0) {
+      max(tite_time) + min_fup_time
     } else {
-      # No queue — standard fresh cohort
-      new_pts <- sample_patient_arrivals(all_data)
-      n_new_pts <- nrow(new_pts)
-      cum_deltas <- cumsum(new_pts$time_delta)
-      recruit_abs_times <- time_now + cum_deltas
-      time_span <- sum(new_pts$time_delta)
-
-      # Infer cohort_size from first call
-      if (is.null(cohort_size)) {
-        cohort_size <- n_new_pts
-        if (is.null(queue_size)) queue_size <- cohort_size
-        # Validate queue_size
-        if (!is.null(dtp_fac) &&
-            !is.null(dtp_fac$sim_settings$queue_size)) {
-          if (dtp_fac$sim_settings$queue_size > cohort_size) {
-            stop("queue_size (", dtp_fac$sim_settings$queue_size,
-                 ") must be <= cohort_size (", cohort_size, ")")
-          }
-          queue_size <- dtp_fac$sim_settings$queue_size
-        }
-      }
+      -Inf
     }
+    time_now <- max(first_arrival, gate, stagger_floor)
 
-    # ── ENROLL + FIT ──────────────────────────────────────────────────────
-    new_dose <- rep(next_dose, n_new_pts)
-    new_cohort <- rep(next_cohort, n_new_pts)
-
-    tite_cohort <- c(tite_cohort, new_cohort)
-    tite_dose <- c(tite_dose, new_dose)
-    tite_time <- c(tite_time, recruit_abs_times)
-
-    tite_data <- data.frame(
-      cohort = tite_cohort,
-      dose = tite_dose,
-      time = tite_time
-    )
-
-    time_now <- time_now + time_span + min_fup_time
-
-    if (nrow(tite_data) > 0) {
-      tite_data$tox <- patient_sample$get_patient_tox(
-        i = seq_along(tite_dose),
-        prob_tox = true_prob_tox[tite_dose],
-        time = time_now - tite_time
-      )
-    } else {
-      tite_data$tox <- integer(0)
-    }
-
-    tite_data$weight <- get_weight(
-      now_time = time_now,
-      recruited_time = tite_data$time,
-      tox = tite_data$tox,
-      max_time = max_time
-    )
-
+    # ── FIT (before dosing anyone in this cohort) ─────────────────────────
+    tite_data <- .tite_frame(tite_cohort, tite_dose, tite_time, time_now,
+                             patient_sample, true_prob_tox, get_weight,
+                             max_time)
     all_data <- dplyr::bind_rows(base_df, tite_data)
     all_data$patient <- seq_len(nrow(all_data))
 
@@ -507,34 +501,26 @@ phase1_dtp_tite_sim <- function(selector_factory, true_prob_tox,
     next_dose <- recommended_dose(fit_obj)
 
     i <- i + 1
-    next_cohort <- next_cohort + 1
     fits[[i]] <- list(.depth = i, time = time_now, fit = fit_obj)
 
-    # ── DTP DECISION ──────────────────────────────────────────────────────
-    if (t_max > 0 && dtp_should_wait(fit_obj) &&
-        continue(fit_obj) && !is.na(next_dose)) {
+    if (!continue(fit_obj) || is.na(next_dose)) break
 
-      wait_time_val <- dtp_wait_time(fit_obj)
-      wait_end <- time_now + wait_time_val
+    # Patients present and awaiting dosing. The opener is always among them.
+    room <- first_arrival
+    earliest <- time_now
+    n_missed <- 0L
+
+    # ── DTP DECISION ──────────────────────────────────────────────────────
+    if (t_max > 0 && dtp_should_wait(fit_obj)) {
 
       # Capture pre-wait state for the event log
       time_before <- time_now
       dose_before <- next_dose
       fit_before  <- fit_obj
 
-      # A. Consume arrivals during wait window
-      queued_arrival_times <- .consume_arrivals(
-        time_now = time_now,
-        wait_end = wait_end,
-        queue_size = queue_size,
-        sample_patient_arrivals = sample_patient_arrivals,
-        all_data = all_data
-      )
-
-      # B. Event-driven wait (DLTs from enrolled patients)
       wait_result <- .advance_wait_with_events(
         time_now = time_now,
-        wait_end = wait_end,
+        wait_end = time_now + dtp_wait_time(fit_obj),
         tite_dose = tite_dose,
         tite_time = tite_time,
         tite_cohort = tite_cohort,
@@ -544,24 +530,31 @@ phase1_dtp_tite_sim <- function(selector_factory, true_prob_tox,
         selector_factory = selector_factory,
         max_time = max_time,
         get_weight = get_weight,
-        queued_arrival_times = queued_arrival_times,
-        queue_size = queue_size,
-        sample_patient_arrivals = sample_patient_arrivals,
         all_data = all_data
       )
 
-      time_now <- wait_result$time_now
+      earliest <- wait_result$time_now
       fit_obj <- wait_result$fit
       next_dose <- wait_result$next_dose
       all_data <- wait_result$all_data
-      queued_arrival_times <- wait_result$queued_arrival_times
-      # An in-wait DLT can end the wait before its projected wait_end. The
-      # queue was pre-filled (.consume_arrivals / .extend_queued_arrivals)
-      # against that projected window, so drop any queued arrival dated after
-      # the actual wait end (time_now) — those patients never really arrived.
-      queued_arrival_times <-
-        queued_arrival_times[queued_arrival_times <= time_now]
-      queue_this_wait <- length(queued_arrival_times)
+
+      # Recruitment is shut for the duration of the wait, but the pool keeps
+      # accruing. Patients who present are held if there is room and turned
+      # away if there is not — the accrual cost of waiting.
+      guard <- 0L
+      while (arrivals$peek(all_data) < earliest) {
+        a <- arrivals$take(all_data)
+        if (length(room) < queue_size) {
+          room <- c(room, a)
+        } else {
+          n_missed <- n_missed + 1L
+        }
+        guard <- guard + 1L
+        if (guard > 1e5L) {
+          stop("Arrival stream failed to advance past the wait end; check ",
+               "that sample_patient_arrivals returns positive time_delta.")
+        }
+      }
 
       dose_delta <- if (is.na(next_dose) || is.na(dose_before)) {
         NA_integer_
@@ -581,18 +574,24 @@ phase1_dtp_tite_sim <- function(selector_factory, true_prob_tox,
         as.integer(next_dose) > as.integer(dose_before)
 
       dtp_wait_events[[length(dtp_wait_events) + 1L]] <- list(
-        cohort_idx     = as.integer(next_cohort - 1L),
+        cohort_idx     = as.integer(next_cohort),
         dose_before    = as.integer(dose_before),
         time_in        = time_before,
-        time_out       = time_now,
-        wait_duration  = time_now - time_before,
+        time_out       = earliest,
+        wait_duration  = earliest - time_before,
         projected_dose = projected_dose,
         dose_after     = as.integer(next_dose),
         ended_by       = wait_result$ended_by,
         dose_delta     = dose_delta,
         effective      = isTRUE(effective),
         num_extensions = as.integer(wait_result$num_extensions),
-        queue_size     = as.integer(queue_this_wait)
+        # n_held: patients held through the wait and dosed at wait_end,
+        # including the cohort opener (the patient the wait is for). Always >= 1
+        # for a wait that doses; ranges 1..cohort_size.
+        # n_missed: patients who arrived while the wait was running to a full
+        # room and were never enrolled.
+        n_held         = as.integer(length(room)),
+        n_missed       = n_missed
       )
 
       # Record the post-wait fit as its own trajectory entry so the terminal
@@ -600,13 +599,27 @@ phase1_dtp_tite_sim <- function(selector_factory, true_prob_tox,
       # mid-wait DLT stop (`ended_by == "stopped"`): otherwise the pre-wait fit
       # remains the last recorded entry, the `!is.na(next_dose)` final-analysis
       # block is skipped, and `recommended_dose()` / `trial_duration()` report a
-      # stale dose (should be NA) at a stale, too-short time. For continuing
-      # waits this simply adds a trajectory point at the wait-end time; the next
-      # cohort's fit (or the final-analysis fit) is still recorded afterwards.
-      # See issue #30.
+      # stale dose (should be NA) at a stale, too-short time. See issue #30.
       i <- i + 1
+      time_now <- earliest
       fits[[i]] <- list(.depth = i, time = time_now, fit = fit_obj)
+
+      if (!continue(fit_obj) || is.na(next_dose)) break
     }
+
+    # ── DOSE THE COHORT ───────────────────────────────────────────────────
+    # Patients held through a wait are dosed the moment it ends; the rest are
+    # dosed on arrival. A cohort therefore need not share one dosing time.
+    while (length(room) < cohort_size) room <- c(room, arrivals$take(all_data))
+    dose_times <- pmax(room, earliest)
+
+    tite_cohort <- c(tite_cohort, rep(next_cohort, length(room)))
+    tite_dose <- c(tite_dose, rep(next_dose, length(room)))
+    tite_time <- c(tite_time, dose_times)
+
+    time_now <- max(dose_times)
+    gate <- time_now
+    next_cohort <- next_cohort + 1
   }
 
   # -- Safety valve --------------------------------------------------------
@@ -616,28 +629,16 @@ phase1_dtp_tite_sim <- function(selector_factory, true_prob_tox,
   }
 
   # -- Final analysis (advance to full follow-up) --------------------------
+  # The last dosed patient completes the observation window. Anchoring to the
+  # dosing times rather than to `time_now` keeps this correct when a wait was
+  # the last thing that happened.
   if (!is.na(next_dose)) {
-    time_now <- time_now + max_time - min_fup_time
-    tite_data <- data.frame(
-      cohort = tite_cohort,
-      dose = tite_dose,
-      time = tite_time
-    )
-    if (nrow(tite_data) > 0) {
-      tite_data$tox <- patient_sample$get_patient_tox(
-        i = seq_along(tite_dose),
-        prob_tox = true_prob_tox[tite_dose],
-        time = time_now - tite_time
-      )
-    } else {
-      tite_data$tox <- integer(0)
+    if (length(tite_time) > 0) {
+      time_now <- max(max(tite_time) + max_time, time_now)
     }
-    tite_data$weight <- get_weight(
-      now_time = time_now,
-      recruited_time = tite_data$time,
-      tox = tite_data$tox,
-      max_time = max_time
-    )
+    tite_data <- .tite_frame(tite_cohort, tite_dose, tite_time, time_now,
+                             patient_sample, true_prob_tox, get_weight,
+                             max_time)
     all_data <- dplyr::bind_rows(base_df, tite_data)
     all_data$patient <- seq_len(nrow(all_data))
     fit_obj <- selector_factory |> fit(all_data)
@@ -664,7 +665,7 @@ phase1_dtp_tite_sim <- function(selector_factory, true_prob_tox,
 .wait_events_cols <- c("cohort_idx", "dose_before", "time_in", "time_out",
                        "wait_duration", "projected_dose", "dose_after",
                        "ended_by", "dose_delta", "effective",
-                       "num_extensions", "queue_size")
+                       "num_extensions", "n_held", "n_missed")
 
 .wait_events_empty <- function() {
   out <- data.frame(
@@ -680,7 +681,8 @@ phase1_dtp_tite_sim <- function(selector_factory, true_prob_tox,
     dose_delta     = integer(0),
     effective      = logical(0),
     num_extensions = integer(0),
-    queue_size     = integer(0),
+    n_held         = integer(0),
+    n_missed       = integer(0),
     stringsAsFactors = FALSE
   )
   out

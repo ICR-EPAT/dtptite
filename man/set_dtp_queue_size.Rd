@@ -2,7 +2,7 @@
 % Please edit documentation in R/simulate.R
 \name{set_dtp_queue_size}
 \alias{set_dtp_queue_size}
-\title{Set the queue size for DTP simulation.}
+\title{Set the waiting-room capacity for DTP simulation.}
 \usage{
 set_dtp_queue_size(dtp_selector_factory, queue_size)
 }
@@ -10,15 +10,30 @@ set_dtp_queue_size(dtp_selector_factory, queue_size)
 \item{dtp_selector_factory}{A \code{dtp_selector_factory} created by
 \code{\link[=apply_dtp]{apply_dtp()}}.}
 
-\item{queue_size}{Integer >= 0. Default (when not set) equals the
-cohort size (inferred at simulation time from the first
-\code{sample_patient_arrivals} call).}
+\item{queue_size}{Integer >= 0, and no greater than the cohort size.
+Default (when not set) equals the cohort size, inferred at simulation time
+from the first \code{sample_patient_arrivals} call. Values below 1 behave as 1;
+see Details.}
 }
 \value{
 The modified \code{dtp_selector_factory} (invisibly).
 }
 \description{
-During a DTP wait, patients who arrive are queued (up to \code{queue_size})
-and dosed at the post-wait recommendation. Queued patients replace
-(part of) the next cohort — they are not additional enrolments.
+Recruitment onto the trial is shut for the duration of a DTP wait, but the
+pool of available patients keeps accruing. Patients who present during a
+wait are held — up to \code{queue_size} of them — and dosed at the post-wait
+recommendation the moment the wait ends. Patients who present when the room
+is already full are \strong{not enrolled}; they are the accrual cost of waiting,
+reported as the \code{n_missed} column of \code{\link[=dtp_wait_events]{dtp_wait_events()}}.
+}
+\details{
+A patient is therefore missed exactly when
+\code{wait_duration > queue_size * accrual_gap}, which concentrates the cost at
+small cohort sizes.
+
+The patient whose arrival opened the cohort is always held — they are the
+reason the wait is being taken — so they occupy one slot and values below 1
+behave as 1. At cohort size 1 the capacity therefore cannot bind: a
+single-patient cohort has no room for anyone else whatever this is set to.
+The knob only does work for cohorts of 2 or more.
 }

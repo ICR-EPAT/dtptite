@@ -23,9 +23,9 @@ test_that("a wait-heavy cohort-1 DTP trial enrols its full planned sample", {
   arrivals <- function(df) data.frame(time_delta = 14)
   true_prob_tox <- c(0.25, 0.38, 0.50, 0.62, 0.72)   # lowest dose at target
 
-  # Seed 22 produces 7 DTP waits at cohort size 1 — enough to push the trajectory
+  # Seed 94 produces 7 DTP waits at cohort size 1 — enough to push the trajectory
   # index past max_i = 30 before all 24 patients enrol.
-  set.seed(22)
+  set.seed(94)
   ps <- PatientSample$new(num_patients = n_max,
                           time_to_tox_func = function() runif(1, 0, 56))
   res <- phase1_dtp_tite_sim(
@@ -41,7 +41,7 @@ test_that("a wait-heavy cohort-1 DTP trial enrols its full planned sample", {
 
   # With the valve re-enabled the same trial is truncated early and warns — this
   # is the bug the default guards against.
-  set.seed(22)
+  set.seed(94)
   ps2 <- PatientSample$new(num_patients = n_max,
                            time_to_tox_func = function() runif(1, 0, 56))
   expect_warning(

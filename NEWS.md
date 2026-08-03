@@ -12,7 +12,24 @@
   DTP trial produces one per cohort *and* one per wait, so a wait-heavy
   cohort-size-1 trial hit the cap (`max_i = 30`) and stopped early with a valid
   recommendation. `phase1_dtp_tite_sim()` now defaults `i_like_big_trials = TRUE`;
-  termination is guaranteed by the design's stopping rules.
+  termination is guaranteed by the design's stopping rules. Mixed
+  `simulate_compare()` calls should pass `i_like_big_trials = TRUE` so the
+  non-DTP baseline arm (escalation's simulator, default `FALSE`) also skips its
+  valve.
+* Renamed the `dtp_wait_events()` columns `queue_size` → `n_held` and
+  `missed` → `n_missed`, and `n_held` now counts the cohort opener. Previously
+  the opener was excluded, so `n_held` (then `queue_size`) was always 0 at cohort
+  size 1 even though one patient was held through every wait. `n_held` is now the
+  number of patients dosed at `wait_end` (>=1 for any dosing wait, up to the
+  cohort size). The `set_dtp_queue_size()` capacity parameter is unchanged.
+
+* **Behaviour change.** Fixed the simulation clock (#32), which conflated the
+  accrual process with the trial timeline. `time_now` was a single cursor
+  serving as both "when did the last patient arrive" and "when is the model
+  being fit", and arrivals were generated as offsets from it, so a minimum
+  follow-up period or a DTP wait silently pushed recruitment. With cohort size
+  1, 14-day accrual and `min_fup_time = 14`, patients were recruited at
+  t = 14, 42, 70, 98 — a 28-day rhythm.
 
 * Fixed a DTP simulation bug (#30) where a trial stopped by a DLT *during* a
   wait recorded the stale pre-wait fit as its terminal state, so

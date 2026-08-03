@@ -38,6 +38,10 @@ Can exceed \code{t_max} when an in-wait DLT triggers an extension; see
 recommendation was strictly higher than the pre-wait recommendation
 (\code{dose_after > dose_before}). Captures both outright escalations and
 waits that recovered from an otherwise unnecessary de-escalation.
+\item \code{num_missed} — per-trial sum of the event-log \code{n_missed}: patients who
+presented during a wait to a full waiting room and were never enrolled.
+This is DTP's accrual cost, and is zero whenever no wait ran longer than
+the room capacity allows.
 }
 
 With \code{by_dose = TRUE}, one row per (replicate × \code{dose_before}).

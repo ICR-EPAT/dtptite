@@ -49,7 +49,7 @@ test_that("dtp_wait_events returns rows with expected columns and types", {
                     "time_out", "wait_duration", "projected_dose",
                     "dose_after", "ended_by", "dose_delta", "effective",
                     "num_extensions",
-                    "queue_size") %in% names(ev)))
+                    "n_held", "n_missed") %in% names(ev)))
   expect_gt(nrow(ev), 0)
 
   expect_type(ev$cohort_idx, "integer")
@@ -74,7 +74,8 @@ test_that("dtp_wait_summary: headline columns and arithmetic invariants", {
   expect_equal(nrow(smry), length(sims$fits))
   expect_setequal(names(smry),
                   c("replicate", "num_waits", "total_wait_time",
-                    "wait_fraction", "max_wait_time", "num_effective_waits"))
+                    "wait_fraction", "max_wait_time", "num_effective_waits",
+                    "num_missed"))
 
   # total_wait_time per replicate matches sum of wait_duration in the log
   for (i in seq_len(nrow(smry))) {
@@ -95,7 +96,7 @@ test_that("dtp_wait_summary: headline columns and arithmetic invariants", {
 
 # ===== (c) Raw log column types =======================================
 
-test_that("dtp_wait_events: ended_by levels, queue_size cap", {
+test_that("dtp_wait_events: ended_by levels, n_held cap", {
   sims <- run_dtp_crm_sims(num_sims = 8)
   ev <- dtp_wait_events(sims)
 
@@ -103,11 +104,11 @@ test_that("dtp_wait_events: ended_by levels, queue_size cap", {
                c("wait_end", "dtp_decision", "stopped"))
   expect_true(all(as.character(ev$ended_by) %in%
                     c("wait_end", "dtp_decision", "stopped")))
-  # Default queue_size equals cohort size (3 here)
-  expect_true(all(ev$queue_size >= 0 & ev$queue_size <= 3))
+  # n_held includes the opener, so it is between 1 and the cohort size (3 here).
+  expect_true(all(ev$n_held >= 1 & ev$n_held <= 3))
 })
 
-test_that("set_dtp_queue_size caps queue_size column in event log", {
+test_that("set_dtp_queue_size caps n_held in the event log", {
   design <- get_dfcrm_tite(skeleton = skeleton, target = target) |>
     apply_dtp(t_max = 35, obswin = 56) |>
     stop_at_n(n = 12)
@@ -122,7 +123,7 @@ test_that("set_dtp_queue_size caps queue_size column in event log", {
     max_time = 56
   )
   ev <- dtp_wait_events(sims)
-  expect_true(all(ev$queue_size <= 2))
+  expect_true(all(ev$n_held <= 2))
 })
 
 # ===== (d) Termination path: CRM and BOIN =============================
@@ -195,7 +196,8 @@ test_that("dtp_wait_summary(by_dose=TRUE) has one row per (replicate × dose_bef
   expect_s3_class(by_d, "tbl_df")
   expect_setequal(names(by_d),
                   c("replicate", "dose_before", "num_waits", "total_wait_time",
-                    "mean_wait_time", "max_wait_time", "num_effective_waits"))
+                    "mean_wait_time", "max_wait_time", "num_effective_waits",
+                    "num_missed"))
   expect_false("wait_fraction" %in% names(by_d))
   expect_false("dose" %in% names(by_d))
 
@@ -265,7 +267,9 @@ test_that("dtp_wait_summary on simulations_collection handles mixed arms", {
     list(base = base_design, dtp_crm = dtp_crm, dtp_boin = dtp_boin),
     num_sims = 4,
     true_prob_tox = true_prob_tox,
-    max_time = 56
+    max_time = 56,
+    # Mixed comparison: keep the non-DTP arm off the depth valve too (#32).
+    i_like_big_trials = TRUE
   )
 
   smry <- dtp_wait_summary(sc)
@@ -350,15 +354,15 @@ test_that("num_extensions matches recorded wait_duration shape", {
 })
 
 # ===== (j) Phantom queue over-fill on early wait-end =================
-# Regression guard. The queue is pre-filled against the *projected* wait_end.
-# When an in-wait DLT ends the wait early (dtp_decision / stopped), queued
-# arrivals dated after the *actual* wait end must be dropped — those patients
-# never really arrived. With deterministic arrivals spaced `spacing` apart, at
+# Regression guard. Held patients (other than the opener) must actually have
+# arrived within the wait. When an in-wait DLT ends the wait early
+# (dtp_decision / stopped), the room is filled only up to the *actual* wait end,
+# not the projected one. With deterministic arrivals spaced `spacing` apart, at
 # most floor(wait_duration / spacing) patients can have arrived within a wait,
-# so `queue_size` must respect that bound. Before the fix, an early-ended wait
-# reported a count reflecting the longer projected window (phantoms).
+# so the held-during-wait count (`n_held - 1`, excluding the opener) must
+# respect that bound.
 
-test_that("queue is not over-filled when an in-wait DLT ends the wait early", {
+test_that("the room is not over-filled when an in-wait DLT ends the wait early", {
   spacing <- 7
   arrivals_fixed <- function(df) data.frame(time_delta = rep(spacing, 3))
   design <- get_dfcrm_tite(skeleton = skeleton, target = target) |>
@@ -380,7 +384,10 @@ test_that("queue is not over-filled when an in-wait DLT ends the wait early", {
   expect_gt(nrow(ev), 0)
   expect_true(any(ev$ended_by %in% c("dtp_decision", "stopped")))
 
-  # Core invariant: with arrivals every `spacing` units, no wait can have
-  # queued more patients than could have arrived within its actual duration.
-  expect_true(all(ev$queue_size <= floor(ev$wait_duration / spacing)))
+  # Every wait that doses holds at least its opener.
+  expect_true(all(ev$n_held >= 1))
+  # Core invariant: with arrivals every `spacing` units, no wait can have held
+  # more *extra* patients (n_held - 1, excluding the opener) than could have
+  # arrived within its actual duration.
+  expect_true(all(ev$n_held - 1 <= floor(ev$wait_duration / spacing)))
 })

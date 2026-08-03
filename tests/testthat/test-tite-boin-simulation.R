@@ -28,56 +28,46 @@ library(escalation)
 # -- Shared setup ----------------------------------------------------------
 target <- 0.25
 
-# ===== Test 1: t_max=0 equivalence ========================================
+# ===== Test 1: t_max=0 disables DTP =======================================
 
-test_that("t_max=0 DTP-BOIN simulation matches base phase1_tite_sim", {
+test_that("t_max=0 DTP-BOIN runs the trial without ever waiting", {
+  # This used to assert bit-equality with escalation::phase1_tite_sim. That is
+  # no longer the right comparison: escalation keeps the single-cursor clock
+  # this package fixed in #32, so the two simulators legitimately disagree even
+  # when DTP is switched off. What t_max = 0 guarantees is narrower and is what
+  # is checked here -- no wait ever fires, and the trial is otherwise ordinary.
   true_prob_tox <- c(0.05, 0.15, 0.25, 0.35, 0.60)
-
-  base_design <- get_boin_tite(5, target) |>
-    stop_at_n(n = 9)
 
   dtp_design <- get_boin_tite(5, target) |>
     apply_dtp(t_max = 0, obswin = 56) |>
     stop_at_n(n = 9)
 
-  # PatientSample is an R6 object with internal state — each sim call
-  # advances the patient counter, so we need separate objects with the
-  # same latent outcomes (same seed).
   set.seed(42)
-  ps1 <- PatientSample$new(
-    num_patients = 50,
-    time_to_tox_func = function() runif(1, 0, 56)
-  )
-  set.seed(42)
-  ps2 <- PatientSample$new(
+  ps <- PatientSample$new(
     num_patients = 50,
     time_to_tox_func = function() runif(1, 0, 56)
   )
 
   set.seed(100)
-  base_result <- escalation:::phase1_tite_sim(
-    base_design, true_prob_tox,
-    patient_sample = ps1,
-    max_time = 56
-  )
-
-  set.seed(100)
-  dtp_result <- phase1_dtp_tite_sim(
+  result <- phase1_dtp_tite_sim(
     dtp_design, true_prob_tox,
-    patient_sample = ps2,
-    max_time = 56
+    patient_sample = ps,
+    max_time = 56,
+    return_all_fits = TRUE
   )
 
-  base_fit <- base_result[[1]]$fit
-  dtp_fit <- dtp_result[[1]]$fit
+  last <- result[[length(result)]]
 
-  expect_equal(recommended_dose(dtp_fit), recommended_dose(base_fit))
-  expect_equal(num_patients(dtp_fit), num_patients(base_fit))
-  expect_equal(
-    base_result[[1]]$time,
-    dtp_result[[1]]$time,
-    tolerance = 0.01
-  )
+  # No wait fired, so nothing was held and nobody was turned away.
+  expect_equal(nrow(last$dtp_wait_events), 0L)
+  expect_equal(num_patients(last$fit), 9)
+  expect_true(is.numeric(recommended_dose(last$fit)) ||
+                is.na(recommended_dose(last$fit)))
+
+  # Updates land one per cohort, at strictly increasing times.
+  times <- vapply(result, function(x) x$time, numeric(1))
+  expect_false(is.unsorted(times))
+  expect_equal(anyDuplicated(times), 0L)
 })
 
 # ===== Test 2: Wait fires =================================================
@@ -110,7 +100,9 @@ test_that("DTP wait increases trial duration for TITE-BOIN", {
     true_prob_tox = true_prob_tox,
     sample_patient_arrivals = arrivals,
     max_time = 56,
-    patient_samples = ps_list
+    patient_samples = ps_list,
+    # Mixed comparison: keep the non-DTP arm off the depth valve too (#32).
+    i_like_big_trials = TRUE
   )
 
   base_durations <- trial_duration(result$base)
@@ -142,7 +134,9 @@ test_that("simulate_compare runs with DTP and non-DTP BOIN designs", {
     num_sims = 5,
     true_prob_tox = true_prob_tox,
     max_time = 56,
-    patient_samples = ps_list
+    patient_samples = ps_list,
+    # Mixed comparison: keep the non-DTP arm off the depth valve too (#32).
+    i_like_big_trials = TRUE
   )
 
   expect_true(!is.null(result$base))
@@ -298,7 +292,11 @@ test_that("queue_size=2 still doses full cohorts of 3 for BOIN", {
 
 # ===== Test 9: queue_size = 0 vs default ==================================
 
-test_that("queue_size=0 produces different behavior than default for BOIN", {
+test_that("a smaller waiting room changes behaviour for BOIN", {
+  # The cohort opener always occupies a slot, so at cohort size 1 the capacity
+  # cannot bind and the knob is inert -- a size-1 cohort has no room for anyone
+  # else regardless. Exercise it at cohort size 3, where holding 1 vs 3 decides
+  # whether the rest of the cohort is dosed at the wait end or on later arrival.
   true_prob_tox <- c(0.15, 0.25, 0.35, 0.50, 0.65)
 
   design_default <- get_boin_tite(5, target) |>
@@ -308,9 +306,9 @@ test_that("queue_size=0 produces different behavior than default for BOIN", {
   design_no_queue <- get_boin_tite(5, target) |>
     apply_dtp(t_max = 35, obswin = 56) |>
     stop_at_n(n = 24)
-  set_dtp_queue_size(design_no_queue, 0)
+  set_dtp_queue_size(design_no_queue, 1)
 
-  arrivals <- function(df) data.frame(time_delta = 7)
+  arrivals <- function(df) data.frame(time_delta = rep(7, 3))
 
   set.seed(888)
   ps_list <- tite_patient_samples(num_sims = 30, max_time = 56,
@@ -517,7 +515,9 @@ test_that("simulate_compare works with all 4 designs", {
     designs,
     num_sims = 5,
     true_prob_tox = true_prob_tox,
-    max_time = 56
+    max_time = 56,
+    # Mixed comparison: keep the non-DTP arms off the depth valve too (#32).
+    i_like_big_trials = TRUE
   )
 
   for (name in names(designs)) {

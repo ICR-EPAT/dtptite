@@ -32,7 +32,7 @@
 #'   `simulations_collection`), `cohort_idx`, `dose_before`, `time_in`,
 #'   `time_out`, `wait_duration`, `projected_dose`, `dose_after`,
 #'   `ended_by` (factor: `wait_end`/`dtp_decision`/`stopped`), `dose_delta`,
-#'   `effective`, `num_extensions`, `queue_size`.
+#'   `effective`, `num_extensions`, `n_held`, `n_missed`.
 #'
 #'   `wait_duration` is the total elapsed time between when the wait was
 #'   triggered and when it ended, including any extensions caused by
@@ -41,6 +41,13 @@
 #'   out. `num_extensions` records how many times that happened (0 means
 #'   the wait ran exactly to its initial projection); as a result
 #'   `wait_duration` can exceed the design's `t_max`.
+#'
+#'   `n_held` is the number of patients held through the wait and dosed at
+#'   `wait_end`, **including** the cohort opener (the patient the wait is for);
+#'   it is at least 1 for any wait that doses and ranges up to the cohort size.
+#'   `n_missed` is the number who arrived while the wait was running to a full
+#'   waiting room and were never enrolled. See [set_dtp_queue_size()] for the
+#'   room capacity that bounds `n_held` and produces `n_missed`.
 #' @export
 dtp_wait_events <- function(x, ...) UseMethod("dtp_wait_events")
 
@@ -89,6 +96,10 @@ dtp_wait_events.simulations_collection <- function(x, ...) {
 #'   recommendation was strictly higher than the pre-wait recommendation
 #'   (`dose_after > dose_before`). Captures both outright escalations and
 #'   waits that recovered from an otherwise unnecessary de-escalation.
+#' - `num_missed` — per-trial sum of the event-log `n_missed`: patients who
+#'   presented during a wait to a full waiting room and were never enrolled.
+#'   This is DTP's accrual cost, and is zero whenever no wait ran longer than
+#'   the room capacity allows.
 #'
 #' With `by_dose = TRUE`, one row per (replicate × `dose_before`).
 #' `wait_fraction` (needs a whole-trial denominator) is dropped and a
@@ -124,10 +135,11 @@ dtp_wait_summary.simulations <- function(x, by_dose = FALSE, ...) {
 
   if (by_dose) {
     cols <- c("replicate", "dose_before", "num_waits", "total_wait_time",
-              "mean_wait_time", "max_wait_time", "num_effective_waits")
+              "mean_wait_time", "max_wait_time", "num_effective_waits",
+              "num_missed")
   } else {
     cols <- c("replicate", "num_waits", "total_wait_time", "wait_fraction",
-              "max_wait_time", "num_effective_waits")
+              "max_wait_time", "num_effective_waits", "num_missed")
   }
 
   # Non-DTP design: all-NA metrics, one row per replicate
@@ -149,7 +161,8 @@ dtp_wait_summary.simulations <- function(x, by_dose = FALSE, ...) {
         total_wait_time     = numeric(0),
         mean_wait_time      = numeric(0),
         max_wait_time       = numeric(0),
-        num_effective_waits = integer(0)
+        num_effective_waits = integer(0),
+        num_missed          = integer(0)
       )
       return(out)
     }
@@ -160,6 +173,7 @@ dtp_wait_summary.simulations <- function(x, by_dose = FALSE, ...) {
       mean_wait_time      = mean(wait_duration),
       max_wait_time       = max(wait_duration),
       num_effective_waits = sum(effective),
+      num_missed          = sum(n_missed),
       .groups = "drop"
     )
     return(tibble::as_tibble(out[, cols, drop = FALSE]))
@@ -174,6 +188,7 @@ dtp_wait_summary.simulations <- function(x, by_dose = FALSE, ...) {
       total_wait_time     = sum(wait_duration),
       max_wait_time       = max(wait_duration),
       num_effective_waits = sum(effective),
+      num_missed          = sum(n_missed),
       .groups = "drop"
     )
   } else {
@@ -182,7 +197,8 @@ dtp_wait_summary.simulations <- function(x, by_dose = FALSE, ...) {
       num_waits           = integer(0),
       total_wait_time     = numeric(0),
       max_wait_time       = numeric(0),
-      num_effective_waits = integer(0)
+      num_effective_waits = integer(0),
+      num_missed          = integer(0)
     )
   }
 
@@ -192,6 +208,7 @@ dtp_wait_summary.simulations <- function(x, by_dose = FALSE, ...) {
   out$total_wait_time[is.na(out$total_wait_time)] <- 0
   out$max_wait_time[is.na(out$max_wait_time)] <- 0
   out$num_effective_waits[is.na(out$num_effective_waits)] <- 0L
+  out$num_missed[is.na(out$num_missed)] <- 0L
 
   # wait_fraction = total_wait_time / per-replicate trial duration. Trust
   # escalation::trial_duration() to return one value per replicate; if it
