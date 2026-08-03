@@ -55,12 +55,6 @@
   - Non-DTP arms dispatch to `escalation::phase1_tite_sim`, which retains the
     old clock. Build baselines as `apply_dtp(t_max = 0, obswin)` so both arms
     run the same simulator; `misc/sensitivity/run_sweep.R` now does this.
-  - **Stored operating characteristics are not comparable across this
-    change.** Selection is broadly stable (PCS within ~2 points in testing),
-    but trial durations fall substantially — roughly 1.7x at cohort size 1 and
-    1.3x at cohort size 3 — and wait activity moves in opposite directions
-    depending on cohort size, so it must be re-measured rather than
-    extrapolated. Re-run `misc/sensitivity`.
 
 * Fixed a DTP simulation bug (#30) where a trial stopped by a DLT *during* a
   wait recorded the stale pre-wait fit as its terminal state, so
