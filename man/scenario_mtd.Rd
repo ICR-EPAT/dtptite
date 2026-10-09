@@ -23,3 +23,9 @@ Identifies the dose whose true toxicity probability lies within \code{tol} of th
 target. When several doses qualify the lowest is returned. When none
 qualifies the scenario has no MTD and \code{NA} is returned with a warning.
 }
+\examples{
+scenario_mtd(c(0.05, 0.15, 0.25, 0.35, 0.60), target = 0.25)
+
+# Two doses inside the band: the lowest is the MTD
+scenario_mtd(c(0.05, 0.22, 0.27, 0.50), target = 0.25)
+}

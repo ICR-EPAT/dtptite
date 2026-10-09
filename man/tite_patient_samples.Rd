@@ -24,3 +24,7 @@ default \code{U(0, 1)}. Pass the result to
 \code{\link[escalation:simulate_compare]{escalation::simulate_compare()}} or \code{\link[escalation:simulate_trials]{escalation::simulate_trials()}}
 via \code{patient_samples}.
 }
+\examples{
+samples <- tite_patient_samples(num_sims = 2, max_time = 56)
+length(samples)
+}

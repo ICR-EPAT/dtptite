@@ -28,6 +28,19 @@
 #'   exceedance check fires (default: `1`). Mirrors TITEgBOIN's `Neli`
 #'   parameter — set to `3` to match TITEgBOIN's default elimination rule.
 #' @return A `beta_binom_tox_selector_factory` object.
+#' @examples
+#' library(escalation)
+#' design <- get_dfcrm_tite(skeleton = c(0.124, 0.25, 0.398, 0.542, 0.666),
+#'                          target = 0.25) |>
+#'   stop_for_beta_binomial_toxicity(dose = 1, tox_threshold = 0.25,
+#'                                   confidence = 0.70)
+#'
+#' # Three DLTs in four patients at the lowest dose stops the trial
+#' outcomes <- data.frame(dose = c(1, 1, 1, 1), tox = c(1, 1, 0, 1),
+#'                        weight = c(1, 1, 1, 1), cohort = 1:4)
+#' x <- fit(design, outcomes)
+#' continue(x)
+#' recommended_dose(x)
 #' @export
 stop_for_beta_binomial_toxicity <- function(parent_selector_factory,
                                             dose = 1,

@@ -48,6 +48,27 @@
 #'   `n_missed` is the number who arrived while the wait was running to a full
 #'   waiting room and were never enrolled. See [set_dtp_queue_size()] for the
 #'   room capacity that bounds `n_held` and produces `n_missed`.
+#' @examples
+#' library(escalation)
+#' design <- get_dfcrm_tite(skeleton = c(0.124, 0.25, 0.398, 0.542, 0.666),
+#'                          target = 0.25) |>
+#'   apply_dtp(t_max = 35, obswin = 56, verbose = FALSE) |>
+#'   stop_at_n(n = 9)
+#'
+#' set.seed(456)
+#' sims <- simulate_trials(
+#'   design,
+#'   num_sims = 2,
+#'   true_prob_tox = c(0.05, 0.15, 0.25, 0.35, 0.60),
+#'   sample_patient_arrivals = function(df) {
+#'     cohorts_of_n(n = 3, mean_time_delta = 1)
+#'   },
+#'   max_time = 56
+#' )
+#'
+#' dtp_wait_events(sims)
+#' dtp_wait_summary(sims)
+#' dtp_wait_summary(sims, by_dose = TRUE)
 #' @export
 dtp_wait_events <- function(x, ...) UseMethod("dtp_wait_events")
 
@@ -120,6 +141,7 @@ dtp_wait_events.simulations_collection <- function(x, ...) {
 #'   otherwise one row per replicate. Default `FALSE`.
 #' @param ... Unused.
 #' @return A tibble. See Details for columns.
+#' @inherit dtp_wait_events examples
 #' @export
 dtp_wait_summary <- function(x, by_dose = FALSE, ...) {
   UseMethod("dtp_wait_summary")

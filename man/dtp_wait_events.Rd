@@ -45,3 +45,25 @@ in \code{dtp_wait_summary()} with explicit \code{0}s). Replicates from non-DTP
 designs contribute zero rows and are flagged by the design carrying no
 event log at all, not by reporting zero waits.
 }
+\examples{
+library(escalation)
+design <- get_dfcrm_tite(skeleton = c(0.124, 0.25, 0.398, 0.542, 0.666),
+                         target = 0.25) |>
+  apply_dtp(t_max = 35, obswin = 56, verbose = FALSE) |>
+  stop_at_n(n = 9)
+
+set.seed(456)
+sims <- simulate_trials(
+  design,
+  num_sims = 2,
+  true_prob_tox = c(0.05, 0.15, 0.25, 0.35, 0.60),
+  sample_patient_arrivals = function(df) {
+    cohorts_of_n(n = 3, mean_time_delta = 1)
+  },
+  max_time = 56
+)
+
+dtp_wait_events(sims)
+dtp_wait_summary(sims)
+dtp_wait_summary(sims, by_dose = TRUE)
+}

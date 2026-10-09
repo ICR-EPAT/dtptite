@@ -32,6 +32,9 @@ simulation_function.dtp_selector_factory <- function(selector_factory) {
 #'   `max_time` argument passed to `simulate_compare` / `simulate_trials`.
 #' @param num_patients Number of latent patients per sample (default 100).
 #' @return A list of length `num_sims`, each element a `PatientSample`.
+#' @examples
+#' samples <- tite_patient_samples(num_sims = 2, max_time = 56)
+#' length(samples)
 #' @export
 tite_patient_samples <- function(num_sims, max_time, num_patients = 100) {
   stopifnot(is.numeric(num_sims), length(num_sims) == 1, num_sims >= 1)
@@ -75,6 +78,14 @@ tite_patient_samples <- function(num_sims, max_time, num_patients = 100) {
 #'   from the first `sample_patient_arrivals` call. Values below 1 behave as 1;
 #'   see Details.
 #' @return The modified `dtp_selector_factory` (invisibly).
+#' @examples
+#' library(escalation)
+#' design <- get_dfcrm_tite(skeleton = c(0.124, 0.25, 0.398, 0.542, 0.666),
+#'                          target = 0.25) |>
+#'   apply_dtp(t_max = 35, obswin = 56)
+#'
+#' # Hold at most two patients while a wait runs
+#' set_dtp_queue_size(design, 2)
 #' @export
 set_dtp_queue_size <- function(dtp_selector_factory, queue_size) {
   fac <- .find_dtp_factory(dtp_selector_factory)
