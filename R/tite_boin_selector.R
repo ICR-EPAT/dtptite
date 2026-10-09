@@ -86,5 +86,9 @@ fit.boin_tite_selector_factory <- function(selector_factory, outcomes, ...) {
 
 #' @export
 simulation_function.tite_mad_selector_factory <- function(selector_factory) {
-  escalation:::phase1_tite_sim
+  # escalation does not export phase1_tite_sim, but its exported generic
+  # returns it for any TITE dfcrm factory. Building the factory fits nothing.
+  simulation_function(
+    escalation::get_dfcrm_tite(skeleton = c(0.25, 0.5), target = 0.25)
+  )
 }
