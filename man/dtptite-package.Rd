@@ -10,6 +10,15 @@
 
 Implements the Dose Transition Pathways (DTP) look-ahead strategy for time-to-event phase I dose-finding clinical trials with delayed or pending toxicity outcomes. Provides a DTP decorator for the 'escalation' framework, supporting both TITE-CRM (model-based) and TITE-BOIN (model-assisted) base designs.
 }
+\section{Funding}{
+
+Xiaoran Lai, NIHR Development and Skills Enhancement Award (DSE),
+NIHR500663, is funded by the NIHR for this research project. The views
+expressed in this publication are those of the author(s) and not
+necessarily those of the NIHR, NHS or the UK Department of Health and
+Social Care.
+}
+
 \seealso{
 Useful links:
 \itemize{
@@ -20,6 +29,12 @@ Useful links:
 }
 \author{
 \strong{Maintainer}: Xiaoran Lai \email{xiaoran.lai@icr.ac.uk}
+
+Other contributors:
+\itemize{
+  \item The Institute of Cancer Research [copyright holder]
+  \item National Institute for Health and Care Research [funder]
+}
 
 }
 \keyword{internal}

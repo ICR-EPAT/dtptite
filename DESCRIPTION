@@ -1,16 +1,21 @@
 Package: dtptite
 Title: Dose Transition Pathways for Time-to-Event Dose-Finding Designs
-Version: 0.0.0.9000
-Authors@R:
-    person("Xiaoran", "Lai", , "xiaoran.lai@icr.ac.uk", role = c("aut", "cre"))
+Version: 0.1.0
+Authors@R: c(
+    person("Xiaoran", "Lai", , "xiaoran.lai@icr.ac.uk", role = c("aut", "cre")),
+    person("The Institute of Cancer Research", role = "cph"),
+    person("National Institute for Health and Care Research", role = "fnd")
+  )
 Description: Implements the Dose Transition Pathways (DTP) look-ahead strategy
     for time-to-event phase I dose-finding clinical trials with delayed or
     pending toxicity outcomes. Provides a DTP decorator for the 'escalation'
     framework, supporting both TITE-CRM (model-based) and TITE-BOIN
     (model-assisted) base designs.
-License: GPL (>= 3) | file LICENSE
+License: GPL (>= 3)
 URL: https://github.com/ICR-EPAT/dtptite
 BugReports: https://github.com/ICR-EPAT/dtptite/issues
+Depends:
+    R (>= 4.1.0)
 Imports:
     BOIN,
     dplyr,

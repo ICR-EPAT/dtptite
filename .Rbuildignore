@@ -7,3 +7,6 @@
 ^README\.md$
 ^misc$
 ^plans$
+^LICENSE$
+^cran-comments\.md$
+^CRAN-SUBMISSION$
