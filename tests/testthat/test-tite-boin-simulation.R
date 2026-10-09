@@ -533,6 +533,7 @@ test_that("simulate_compare works with all 4 designs", {
 # ===== Test 16: Operating characteristics match TITEgBOIN ==================
 
 test_that("TITE-BOIN selection probabilities match TITEgBOIN reference", {
+  skip_on_cran()
   skip_if_not_installed("TITEgBOIN")
 
   # -- Shared parameters -----------------------------------------------------
@@ -645,6 +646,7 @@ test_that("TITE-BOIN selection probabilities match TITEgBOIN reference", {
 # ===== Test 17: Extra-safe stopping via chained decorators ===================
 
 test_that("chained stop_for_beta_binomial_toxicity matches TITEgBOIN extrasafe", {
+  skip_on_cran()
   skip_if_not_installed("TITEgBOIN")
 
   # -- Shared parameters -----------------------------------------------------
@@ -757,6 +759,7 @@ test_that("chained stop_for_beta_binomial_toxicity matches TITEgBOIN extrasafe",
 # ===== Test 18: All-toxic extrasafe — early stopping dominates ===============
 
 test_that("all-toxic scenario with extrasafe matches TITEgBOIN early stopping", {
+  skip_on_cran()
   skip_if_not_installed("TITEgBOIN")
 
   # All doses above target — most trials should stop early with NoDose

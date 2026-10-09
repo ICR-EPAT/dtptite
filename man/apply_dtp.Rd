@@ -44,3 +44,21 @@ projection engine. At fit time, the decorator checks whether waiting
 for pending patients' follow-up (up to \code{t_max}) could change the dose
 recommendation upward.
 }
+\examples{
+library(escalation)
+design <- get_dfcrm_tite(skeleton = c(0.124, 0.25, 0.398, 0.542, 0.666),
+                         target = 0.25) |>
+  apply_dtp(t_max = 35, obswin = 56)
+
+# Four patients at dose 2: one DLT, and the last patient is only 30\% of the
+# way through the observation window.
+outcomes <- data.frame(dose = c(2, 2, 2, 2), tox = c(0, 1, 0, 0),
+                       weight = c(1, 1, 1, 0.3), cohort = 1:4)
+x <- fit(design, outcomes)
+
+recommended_dose(x)                # de-escalate now...
+dtp_should_wait(x)                 # ...but waiting could change that
+dtp_wait_time(x)                   # days to wait
+dtp_wait_time(x, type = "weight")  # the same wait as a weight increment
+dtp_projected_dose(x)              # recommendation after the wait
+}

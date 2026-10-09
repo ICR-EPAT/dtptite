@@ -37,3 +37,12 @@ behave as 1. At cohort size 1 the capacity therefore cannot bind: a
 single-patient cohort has no room for anyone else whatever this is set to.
 The knob only does work for cohorts of 2 or more.
 }
+\examples{
+library(escalation)
+design <- get_dfcrm_tite(skeleton = c(0.124, 0.25, 0.398, 0.542, 0.666),
+                         target = 0.25) |>
+  apply_dtp(t_max = 35, obswin = 56)
+
+# Hold at most two patients while a wait runs
+set_dtp_queue_size(design, 2)
+}

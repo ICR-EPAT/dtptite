@@ -49,3 +49,33 @@ carries \code{mtd = NA} and \code{reached = NA}, distinguishing "no MTD to reach
 The number of replicates is recorded in a \code{num_sims} attribute and is used
 as the denominator by \code{\link[=summary.time_to_first_mtd]{summary.time_to_first_mtd()}}.
 }
+\examples{
+library(escalation)
+skeleton <- c(0.124, 0.25, 0.398, 0.542, 0.666)
+designs <- list(
+  `TITE-CRM` = get_dfcrm_tite(skeleton = skeleton, target = 0.25) |>
+    stop_at_n(n = 18),
+  `DTP + TITE-CRM` = get_dfcrm_tite(skeleton = skeleton, target = 0.25) |>
+    apply_dtp(t_max = 35, obswin = 56, verbose = FALSE) |>
+    stop_at_n(n = 18)
+)
+
+set.seed(456)
+sims <- simulate_compare(
+  designs,
+  num_sims = 10,
+  true_prob_tox = c(0.05, 0.15, 0.25, 0.35, 0.60),
+  sample_patient_arrivals = function(df) {
+    cohorts_of_n(n = 3, mean_time_delta = 1)
+  },
+  max_time = 56,
+  i_like_big_trials = TRUE
+)
+
+ttm <- time_to_first_mtd(sims)
+ttm
+summary(ttm)
+if (requireNamespace("ggplot2", quietly = TRUE)) {
+  plot(ttm)
+}
+}

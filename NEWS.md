@@ -1,4 +1,6 @@
-# dtptite 0.0.0.9000
+# dtptite 0.1.0
+
+* First CRAN submission.
 
 * `fit.dtp_selector_factory()` now skips the wait projection when the parent's
   recommendation is already the top dose. `.dtp_project()` only reports a wait

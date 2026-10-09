@@ -41,3 +41,17 @@ Creates a stopping decorator that monitors one or more doses and halts
 the trial when the posterior probability of the true toxicity rate
 exceeding \code{tox_threshold} is greater than \code{confidence}.
 }
+\examples{
+library(escalation)
+design <- get_dfcrm_tite(skeleton = c(0.124, 0.25, 0.398, 0.542, 0.666),
+                         target = 0.25) |>
+  stop_for_beta_binomial_toxicity(dose = 1, tox_threshold = 0.25,
+                                  confidence = 0.70)
+
+# Three DLTs in four patients at the lowest dose stops the trial
+outcomes <- data.frame(dose = c(1, 1, 1, 1), tox = c(1, 1, 0, 1),
+                       weight = c(1, 1, 1, 1), cohort = 1:4)
+x <- fit(design, outcomes)
+continue(x)
+recommended_dose(x)
+}
