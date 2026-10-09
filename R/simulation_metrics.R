@@ -229,5 +229,5 @@ dtp_wait_summary.simulations_collection <- function(x, by_dose = FALSE, ...) {
 
 # Silence R CMD check NOTE: undefined globals used via NSE in dplyr calls
 utils::globalVariables(c(
-  "replicate", "dose_before", "wait_duration", "effective"
+  "replicate", "dose_before", "wait_duration", "effective", "n_missed"
 ))
